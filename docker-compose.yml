@@ -1,0 +1,121 @@
+# TaskHub MCP Server - Docker Compose Configuration
+# For local development and testing
+
+version: '3.8'
+
+services:
+  taskhub-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: taskhub-mcp-server
+    restart: unless-stopped
+    
+    # Environment configuration
+    environment:
+      - NODE_ENV=production
+      - LOG_LEVEL=info
+      - DATABASE_URL=file:./data/taskhub.db
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - ALLOWED_REPOS=${ALLOWED_REPOS:-""}
+      - DRY_RUN=${DRY_RUN:-true}
+      - MAX_PATCH_BYTES=${MAX_PATCH_BYTES:-200000}
+      - FILE_ALLOWED_PATTERNS=${FILE_ALLOWED_PATTERNS:-"^src/|^apps/|^packages/"}
+      
+    # Port mapping (for HTTP transport when implemented)
+    ports:
+      - "3000:3000"
+    
+    # Volume mounts for persistence
+    volumes:
+      - taskhub_data:/app/data
+      - type: tmpfs
+        target: /tmp
+        tmpfs:
+          size: 100M
+          mode: 1777
+    
+    # Security settings
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=100m
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+    
+    # Health check
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"const http = require('http'); const options = { hostname: 'localhost', port: 3000, path: '/healthz', timeout: 5000 }; const req = http.request(options, (res) => { if (res.statusCode === 200) process.exit(0); else process.exit(1); }); req.on('error', () => process.exit(1)); req.end();\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Optional: PostgreSQL for production (when DATABASE_URL points to postgres)
+  postgres:
+    image: postgres:15-alpine
+    container_name: taskhub-postgres
+    restart: unless-stopped
+    
+    environment:
+      - POSTGRES_DB=taskhub
+      - POSTGRES_USER=taskhub
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme}
+    
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    
+    # Security settings
+    security_opt:
+      - no-new-privileges:true
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+    
+    # Health check
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U taskhub -d taskhub"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    
+    # Only start if using PostgreSQL
+    profiles:
+      - postgres
+
+volumes:
+  taskhub_data:
+    driver: local
+  postgres_data:
+    driver: local
+
+networks:
+  default:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

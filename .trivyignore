@@ -1,0 +1,12 @@
+# Trivy ignore file for TaskHub MCP Server
+# This file contains vulnerabilities that are acceptable for this project
+
+# Development dependencies (not in production)
+CVE-2023-26136  # tough-cookie - dev dependency only
+CVE-2023-26115  # word-wrap - dev dependency only
+
+# Low severity issues that don't affect our use case
+CVE-2024-4067   # micromatch - used in build tools only
+
+# Issues in base images that are patched in distroless
+# (Add specific CVEs here if needed after security review)

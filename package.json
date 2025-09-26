@@ -9,6 +9,8 @@
     "build": "tsc && tsc-alias",
     "start": "node dist/server.js",
     "test": "vitest",
+    "test:unit": "vitest run tests/unit",
+    "test:integration": "vitest run tests/integration",
     "test:watch": "vitest --watch",
     "test:coverage": "vitest --coverage",
     "lint": "eslint src --ext .ts,.tsx --fix",
@@ -19,7 +21,11 @@
     "db:setup": "prisma generate && prisma db push",
     "db:reset": "prisma db push --force-reset",
     "db:studio": "prisma studio",
-    "demo:happy-path": "tsx scripts/demo.ts"
+    "demo:happy-path": "tsx scripts/demo.ts",
+    "demo:phase4": "node scripts/test-simple-phase4.js",
+    "deploy:build": "scripts/deploy.sh build",
+    "deploy:start": "scripts/deploy.sh deploy",
+    "deploy:stop": "scripts/deploy.sh stop"
   },
   "keywords": [
     "mcp",

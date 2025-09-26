@@ -18,10 +18,19 @@ export default defineConfig({
         '**/coverage/**',
       ],
     },
+    pool: 'forks',
+    poolOptions: {
+      forks: {
+        singleFork: true,
+      },
+    },
   },
   resolve: {
     alias: {
       '@': resolve(__dirname, './src'),
     },
+  },
+  define: {
+    global: 'globalThis',
   },
 });
