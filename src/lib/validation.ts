@@ -73,21 +73,23 @@ export type PushPatchInput = z.infer<typeof PushPatchSchema>;
 
 // open_pr schema
 export const OpenPrSchema = z.object({
-  task_id: z.number().int().min(1),
-  repo: z.string().regex(repoPattern),
-  title: z.string().optional(),
-  body: z.string().optional(),
-  draft: z.boolean().default(true),
+  task_id: z.number().int().positive().describe('ID of the task to create a PR for'),
+  repo: z.string().regex(repoPattern).optional().describe('Repository in format owner/repo (optional if task has repo)'),
+  title: z.string().min(1).max(200).optional().describe('Custom PR title (optional, auto-generated if not provided)'),
+  draft: z.boolean().optional().default(true).describe('Whether to create a draft PR (default: true)'),
+  force: z.boolean().optional().default(false).describe('Force create non-draft PR even if policy requires draft'),
+  dry_run: z.boolean().optional().default(false).describe('If true, simulate the operation without making changes'),
 });
 export type OpenPrInput = z.infer<typeof OpenPrSchema>;
 
 // post_review schema
 export const PostReviewSchema = z.object({
-  task_id: z.number().int().optional(),
-  pr_number: z.number().int().optional(),
-  notes: z.string().min(10),
-  block: z.boolean().default(false),
-  approve: z.boolean().default(false),
+  task_id: z.number().int().positive().optional().describe('ID of the task to review (either task_id or pr_number required)'),
+  pr_number: z.number().int().positive().optional().describe('PR number to review (either task_id or pr_number required)'),
+  repo: z.string().regex(repoPattern).optional().describe('Repository in format owner/repo (optional if task has repo)'),
+  notes: z.string().min(1).max(2000).describe('Review notes and feedback (1-2000 characters)'),
+  block: z.boolean().optional().default(false).describe('Whether this review blocks the PR from being merged'),
+  dry_run: z.boolean().optional().default(false).describe('If true, simulate the operation without making changes'),
 }).refine(
   (data) => data.task_id !== undefined || data.pr_number !== undefined,
   {

@@ -234,3 +234,306 @@ Each prompt builds on the previous work and follows the implementation priority 
 - **Custom**: Mix and match based on your specific needs
 
 All prompts ensure adherence to the coding standards, security patterns, and testing requirements defined in AGENT_INSTRUCTIONS.md.
+---
+## Additive Phases (No Flow Change)
+
+> These are **features** layered onto your current phases. Keep your Phase 1–5 as-is; add these as 2.5 / 3.5 / 4.5 / 5.5. They don’t change public tool names or the agent flow.
+
+### 🔌 Phase 2.5 — Remote HTTP + Guardrails
+**Goal:** Keep `stdio` flow; **add** HTTP transport for ChatGPT Dev Mode. Add auth, idempotency, audit as middlewares.
+
+**Tasks**
+1) **HTTP surface**: Fastify server with `POST /mcp/tools/:name` (streaming OK later) and `GET /healthz`, `GET /readyz`.
+
+2) **Auth**: Bearer JWT middleware (`Authorization: Bearer <token>`); short‑lived tokens. CLI to mint tokens.
+
+3) **Idempotency (mutations only)**: Honor `Idempotency-Key` header; table `idempotency_keys(key, tool, request_hash, response, created_at)`. On duplicate, return stored response.
+
+4) **Audit**: Persist tool, actor, inputs (redacted), outputs, status, latency, `request_id`.
+
+5) **Limits**: `MAX_PATCH_BYTES`, filename allowlist; friendly error messages.
+
+
+**Env additions (append to `.env.example`)**
+```
+TRANSPORTS=stdio,http
+BASE_PATH=/mcp
+JWT_SECRET=change-me
+JWT_TTL_MIN=30
+IDEMPOTENCY_REQUIRED=true
+ALLOWED_REPOS=org/app1,org/app2
+DRY_RUN=true
+MAX_PATCH_BYTES=200000
+FILE_ALLOWED_PATTERNS=^src/|^apps/|^packages/
+LOG_LEVEL=info
+```
+
+**Tests**
+- Unit: auth pass/fail; duplicate `Idempotency-Key` returns same payload.
+- Integration: `POST /mcp/tools/submit_spec` happy path + duplicate key.
+- E2E: ChatGPT Dev Mode calls `list_tasks` and `submit_spec` over HTTP.
+
+---
+
+### 🐙 Phase 3.5 — GitHub App Auth (feature-flag; keep PAT path)
+**Goal:** Keep PAT for dev; **add** GitHub App mode (safer, revocable).
+
+**Tasks**
+- Adapter supports `GITHUB_AUTH=pat|app`.
+- If `app`: require `GITHUB_APP_ID`, `GITHUB_APP_INSTALLATION_ID`, `GITHUB_APP_PRIVATE_KEY_BASE64`.
+- Minimal scopes: `contents`, `pull_requests`.
+
+**Env**
+```
+GITHUB_AUTH=pat   # switch to 'app' when ready
+GITHUB_APP_ID=
+GITHUB_APP_INSTALLATION_ID=
+GITHUB_APP_PRIVATE_KEY_BASE64=
+```
+
+**Tests**
+- Token exchange mocked; 401 when repo not installed; enforce `ALLOWED_REPOS`.
+
+---
+
+### 🧩 Phase 4.5 — PR Hygiene (templates & branch rules)
+**Goal:** Improve review quality without changing tools.
+
+**Tasks**
+- Server derives branch: `feature/<slug>-<task_id>` in `start_branch`.
+- `open_pr` injects a checklist from acceptance criteria.
+- Enforce state machine: `todo → claimed → in_progress → review → done`.
+
+---
+
+### 🧪 Phase 5.5 — Demo Script & curl Examples
+**Goal:** One command to prove E2E.
+
+**Script** (`npm run demo:happy`):
+1) `submit_spec` → 2) `list_tasks` → 3) `claim_task` → 4) `start_branch` → 5) `push_patch` (two small commits) → 6) `open_pr` (draft) → 7) `post_review` (block=true then false)
+
+**curl example**
+```bash
+curl -sS -X POST "https://YOUR-URL/mcp/tools/submit_spec" \  -H "Authorization: Bearer $TASKHUB_JWT" \  -H "Idempotency-Key: taskhub-42-$(date +%s)" \  -H "Content-Type: application/json" \  -d '{
+    "title": "RequestGrid",
+    "description": "Create React grid with pagination and status filter",
+    "acceptance_criteria": ["pagination(20)", "filter by status", "ARIA labels", "unit tests"],
+    "repo": "org/app"
+  }'
+```
+
+---
+
+## Agent Prompts (Drop‑in / Additive)
+
+> Paste these blocks into your agent runner config. They assume the 7 tools are available and the additive phases above are present (HTTP, auth, idempotency, audit).
+
+### 🌐 Global Rules (All Agents)
+- Always prefer **calling tools** over free text if a tool exists.
+- On failure, **print server message** and propose a fix (e.g., “repo not allowed; update `ALLOWED_REPOS` or change task.repo”).
+- For any **mutating** tool (`submit_spec`, `claim_task`, `start_branch`, `push_patch`, `open_pr`, `post_review`), include an **`Idempotency-Key`** header of the form: `taskhub-<task_id>-<timestamp>`.
+- Never push binaries. Respect filename allowlist and size caps.
+- Use the **server‑returned branch**; do not invent names.
+
+### 🛠️ Augment Code — Implementation Loop (Prompt)
+> **Goal:** Implement tasks produced by ChatGPT via TaskHub MCP.
+
+> **Steps (always follow in order):**
+
+> 1) Call `list_tasks(status='todo')`. If empty, ask ChatGPT to run `submit_spec` and wait.
+
+> 2) Call `claim_task(task_id, assignee='augment')`. If 409 (already claimed), request reassignment in chat.
+
+> 3) Call `start_branch(task_id, repo)` and **use the returned branch** for all commits.
+
+> 4) For each atomic change, call `push_patch(task_id, files=[{path, content_b64}], headers:{Idempotency-Key})`. Split large patches; obey caps and allowlist.
+
+> 5) Call `open_pr(task_id, repo, draft=true)`. PR body must include a checklist derived from acceptance criteria and a brief summary of changes.
+
+> 6) Call `post_review(task_id, notes='Summary of changes & what’s left', block=false)` and wait for reviewer feedback before continuing.
+
+> **Constraints:** Never commit secrets or binaries; only text/code. Follow the repo’s lint/test conventions if present. If PR checks fail, push a new patch that fixes them.
+
+
+### 🧠 ChatGPT — Reviewer Loop (Prompt)
+> **Role:** Product reviewer using TaskHub MCP.
+
+> **Process:**
+
+> - Inspect the PR body and files. Verify acceptance criteria.
+
+> - If any criterion is missing or regression risk exists, call `post_review(task_id|pr, notes='<numbered actionable list>', block=true)`.
+
+> - Once all criteria and tests pass, call `post_review(task_id|pr, notes='Approved. Merge when CI is green.', block=false)` with a short risk note and follow‑ups.
+
+> **Do not** merge; leave merging to maintainers or automated policy.
+
+
+### 🔎 Discovery & Sanity (Prompt Snippet)
+> On startup, verify connectivity by calling `list_tasks`. If the server responds with 401/403, surface “Auth invalid — mint a fresh JWT.” If 404 on `/mcp`, suggest using the root or fixing `BASE_PATH`.
+
+
+### 🧯 Error Handling (Prompt Snippet)
+> Always include the server error message in your response. Suggest concrete remediation (e.g., “Flip DRY_RUN=false to create real PRs” or “Install the GitHub App on repo org/app”).
+
+
+### 🧾 Idempotency (Prompt Snippet)
+> For all writes, set `Idempotency-Key: taskhub-<task_id>-<timestamp>` and retry safely on network errors. If the server returns a prior result, proceed without duplicating work.
+
+
+---
+
+## Optional: Build‑the‑Server Prompt (for Augment to scaffold MCP)
+> **Goal:** Build a production‑ready **TaskHub MCP** server (TypeScript + Fastify) per the README and this file.
+
+> **Implement:** 7 tools with Zod schemas; HTTP transport (`POST /mcp/tools/:name`, `GET /healthz`,`/readyz`); Prisma ORM (SQLite dev, Postgres prod); GitHub integration via App (feature‑flag) or PAT (dev); JWT auth; repo allowlist; dry‑run default; idempotency (`Idempotency-Key`); audit log; Pino logs with `request_id`; scripts: `dev`, `test`, `demo:happy`; Dockerfile (distroless, non‑root); Helm chart (secrets, resources, HPA). 
+
+> **Constraints:** No shell/exec tools; enforce filename allowlist and size caps. All PRs open **draft** unless `force=true` and policy allows.
+## Additive Phases (No Flow Change)
+
+> These are **features** layered onto your current phases. Keep your Phase 1–5 as-is; add these as 2.5 / 3.5 / 4.5 / 5.5. They don’t change public tool names or the agent flow.
+
+### 🔌 Phase 2.5 — Remote HTTP + Guardrails
+**Goal:** Keep `stdio` flow; **add** HTTP transport for ChatGPT Dev Mode. Add auth, idempotency, audit as middlewares.
+
+**Tasks**
+1) **HTTP surface**: Fastify server with `POST /mcp/tools/:name` (streaming OK later) and `GET /healthz`, `GET /readyz`.
+
+2) **Auth**: Bearer JWT middleware (`Authorization: Bearer <token>`); short‑lived tokens. CLI to mint tokens.
+
+3) **Idempotency (mutations only)**: Honor `Idempotency-Key` header; table `idempotency_keys(key, tool, request_hash, response, created_at)`. On duplicate, return stored response.
+
+4) **Audit**: Persist tool, actor, inputs (redacted), outputs, status, latency, `request_id`.
+
+5) **Limits**: `MAX_PATCH_BYTES`, filename allowlist; friendly error messages.
+
+
+**Env additions (append to `.env.example`)**
+```
+TRANSPORTS=stdio,http
+BASE_PATH=/mcp
+JWT_SECRET=change-me
+JWT_TTL_MIN=30
+IDEMPOTENCY_REQUIRED=true
+ALLOWED_REPOS=org/app1,org/app2
+DRY_RUN=true
+MAX_PATCH_BYTES=200000
+FILE_ALLOWED_PATTERNS=^src/|^apps/|^packages/
+LOG_LEVEL=info
+```
+
+**Tests**
+- Unit: auth pass/fail; duplicate `Idempotency-Key` returns same payload.
+- Integration: `POST /mcp/tools/submit_spec` happy path + duplicate key.
+- E2E: ChatGPT Dev Mode calls `list_tasks` and `submit_spec` over HTTP.
+
+---
+
+### 🐙 Phase 3.5 — GitHub App Auth (feature-flag; keep PAT path)
+**Goal:** Keep PAT for dev; **add** GitHub App mode (safer, revocable).
+
+**Tasks**
+- Adapter supports `GITHUB_AUTH=pat|app`.
+- If `app`: require `GITHUB_APP_ID`, `GITHUB_APP_INSTALLATION_ID`, `GITHUB_APP_PRIVATE_KEY_BASE64`.
+- Minimal scopes: `contents`, `pull_requests`.
+
+**Env**
+```
+GITHUB_AUTH=pat   # switch to 'app' when ready
+GITHUB_APP_ID=
+GITHUB_APP_INSTALLATION_ID=
+GITHUB_APP_PRIVATE_KEY_BASE64=
+```
+
+**Tests**
+- Token exchange mocked; 401 when repo not installed; enforce `ALLOWED_REPOS`.
+
+---
+
+### 🧩 Phase 4.5 — PR Hygiene (templates & branch rules)
+**Goal:** Improve review quality without changing tools.
+
+**Tasks**
+- Server derives branch: `feature/<slug>-<task_id>` in `start_branch`.
+- `open_pr` injects a checklist from acceptance criteria.
+- Enforce state machine: `todo → claimed → in_progress → review → done`.
+
+---
+
+### 🧪 Phase 5.5 — Demo Script & curl Examples
+**Goal:** One command to prove E2E.
+
+**Script** (`npm run demo:happy`):
+1) `submit_spec` → 2) `list_tasks` → 3) `claim_task` → 4) `start_branch` → 5) `push_patch` (two small commits) → 6) `open_pr` (draft) → 7) `post_review` (block=true then false)
+
+**curl example**
+```bash
+curl -sS -X POST "https://YOUR-URL/mcp/tools/submit_spec" \  -H "Authorization: Bearer $TASKHUB_JWT" \  -H "Idempotency-Key: taskhub-42-$(date +%s)" \  -H "Content-Type: application/json" \  -d '{
+    "title": "RequestGrid",
+    "description": "Create React grid with pagination and status filter",
+    "acceptance_criteria": ["pagination(20)", "filter by status", "ARIA labels", "unit tests"],
+    "repo": "org/app"
+  }'
+```
+
+---
+
+## Agent Prompts (Drop‑in / Additive)
+
+> Paste these blocks into your agent runner config. They assume the 7 tools are available and the additive phases above are present (HTTP, auth, idempotency, audit).
+
+### 🌐 Global Rules (All Agents)
+- Always prefer **calling tools** over free text if a tool exists.
+- On failure, **print server message** and propose a fix (e.g., “repo not allowed; update `ALLOWED_REPOS` or change task.repo”).
+- For any **mutating** tool (`submit_spec`, `claim_task`, `start_branch`, `push_patch`, `open_pr`, `post_review`), include an **`Idempotency-Key`** header of the form: `taskhub-<task_id>-<timestamp>`.
+- Never push binaries. Respect filename allowlist and size caps.
+- Use the **server‑returned branch**; do not invent names.
+
+### 🛠️ Augment Code — Implementation Loop (Prompt)
+> **Goal:** Implement tasks produced by ChatGPT via TaskHub MCP.
+
+> **Steps (always follow in order):**
+
+> 1) Call `list_tasks(status='todo')`. If empty, ask ChatGPT to run `submit_spec` and wait.
+
+> 2) Call `claim_task(task_id, assignee='augment')`. If 409 (already claimed), request reassignment in chat.
+
+> 3) Call `start_branch(task_id, repo)` and **use the returned branch** for all commits.
+
+> 4) For each atomic change, call `push_patch(task_id, files=[{path, content_b64}], headers:{Idempotency-Key})`. Split large patches; obey caps and allowlist.
+
+> 5) Call `open_pr(task_id, repo, draft=true)`. PR body must include a checklist derived from acceptance criteria and a brief summary of changes.
+
+> 6) Call `post_review(task_id, notes='Summary of changes & what’s left', block=false)` and wait for reviewer feedback before continuing.
+
+> **Constraints:** Never commit secrets or binaries; only text/code. Follow the repo’s lint/test conventions if present. If PR checks fail, push a new patch that fixes them.
+
+
+### 🧠 ChatGPT — Reviewer Loop (Prompt)
+> **Role:** Product reviewer using TaskHub MCP.
+
+> **Process:**
+
+> - Inspect the PR body and files. Verify acceptance criteria.
+
+> - If any criterion is missing or regression risk exists, call `post_review(task_id|pr, notes='<numbered actionable list>', block=true)`.
+
+> - Once all criteria and tests pass, call `post_review(task_id|pr, notes='Approved. Merge when CI is green.', block=false)` with a short risk note and follow‑ups.
+
+> **Do not** merge; leave merging to maintainers or automated policy.
+
+
+### 🔎 Discovery & Sanity (Prompt Snippet)
+> On startup, verify connectivity by calling `list_tasks`. If the server responds with 401/403, surface “Auth invalid — mint a fresh JWT.” If 404 on `/mcp`, suggest using the root or fixing `BASE_PATH`.
+
+
+### 🧯 Error Handling (Prompt Snippet)
+> Always include the server error message in your response. Suggest concrete remediation (e.g., “Flip DRY_RUN=false to create real PRs” or “Install the GitHub App on repo org/app”).
+
+
+### 🧾 Idempotency (Prompt Snippet)
+> For all writes, set `Idempotency-Key: taskhub-<task_id>-<timestamp>` and retry safely on network errors. If the server returns a prior result, proceed without duplicating work.
+
+
+---
+

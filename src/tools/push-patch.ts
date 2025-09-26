@@ -10,6 +10,7 @@ import { withRetry, prisma } from '../lib/database.js';
 import { getGitHubClient, GitHubFile } from '../lib/github.js';
 import { ToolResult, PushPatchResponse } from '../types/mcp.js';
 import { success, failure, isFailure, NotFoundError, ConflictError, ValidationError } from '../types/errors.js';
+import { validateActionForStateWithDetails } from '../lib/state-machine.js';
 
 /**
  * Push code changes to a task branch
@@ -104,18 +105,8 @@ export async function pushPatchTool(args: unknown, logger: Logger): Promise<Tool
         );
       }
 
-      // Check if task is in the right status for pushing changes
-      if (task.status !== 'in_progress') {
-        throw new ConflictError(
-          `Task ${input.task_id} must be in progress to push changes`,
-          'TASK_NOT_IN_PROGRESS',
-          { 
-            taskId: input.task_id,
-            currentStatus: task.status,
-            requiredStatus: 'in_progress',
-          }
-        );
-      }
+      // Validate state machine transition (Phase 4.5)
+      validateActionForStateWithDetails('push_patch', task.status as any, input.task_id);
 
       // Use provided repo or task's repo
       const repoString = input.repo || task.repo;

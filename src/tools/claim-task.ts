@@ -9,6 +9,7 @@ import { validateInput, ClaimTaskSchema, ClaimTaskInput } from '../lib/validatio
 import { withRetry, prisma } from '../lib/database.js';
 import { ToolResult, ClaimTaskResponse } from '../types/mcp.js';
 import { success, failure, isFailure, NotFoundError, ConflictError } from '../types/errors.js';
+import { validateActionForStateWithDetails } from '../lib/state-machine.js';
 
 /**
  * Claim a task for a user
@@ -87,18 +88,8 @@ export async function claimTaskTool(args: unknown, logger: Logger): Promise<Tool
         );
       }
 
-      // Check if task is in a claimable state
-      if (existingTask.status !== 'todo') {
-        throw new ConflictError(
-          `Task ${input.task_id} cannot be claimed in status '${existingTask.status}'`,
-          'TASK_NOT_CLAIMABLE',
-          { 
-            taskId: input.task_id,
-            currentStatus: existingTask.status,
-            claimableStatuses: ['todo'],
-          }
-        );
-      }
+      // Validate state machine transition (Phase 4.5)
+      validateActionForStateWithDetails('claim_task', existingTask.status as any, input.task_id);
 
       // Update task to claimed status
       const updatedTask = await prisma.task.update({

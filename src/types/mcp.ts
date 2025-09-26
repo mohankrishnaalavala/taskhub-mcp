@@ -110,22 +110,34 @@ export interface PushPatchResponse {
   dry_run: boolean;
 }
 
+// Open PR response
 export interface OpenPrResponse {
   task_id: number;
   pr_number: number;
-  url: string;
+  repo: string;
   title: string;
+  url: string;
   draft: boolean;
+  branch_name: string;
+  status: TaskStatus;
+  dry_run: boolean;
   created_at: string;
 }
 
+// Post review response
 export interface PostReviewResponse {
   review_id: string;
-  task_id?: number;
-  pr_number?: number;
+  task_id?: number | undefined;
+  pr_number: number;
+  repo: string;
+  notes: string;
+  block: boolean;
   status: 'posted' | 'blocked' | 'approved';
+  dry_run: boolean;
   posted_at: string;
 }
+
+
 
 // Utility type for JSON serialization
 export function serializeForDatabase(data: any): string {

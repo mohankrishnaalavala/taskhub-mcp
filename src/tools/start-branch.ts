@@ -10,22 +10,26 @@ import { withRetry, prisma } from '../lib/database.js';
 import { getGitHubClient } from '../lib/github.js';
 import { ToolResult, StartBranchResponse } from '../types/mcp.js';
 import { success, failure, isFailure, NotFoundError, ConflictError, ValidationError } from '../types/errors.js';
+import { validateActionForStateWithDetails } from '../lib/state-machine.js';
 
 /**
- * Generate a branch name from task title
+ * Generate a branch name from task title using feature/{slug}-{task_id} format
+ * Following Phase 4.5 specification for improved PR hygiene
  */
 function generateBranchName(taskId: number, title: string): string {
-  // Convert title to kebab-case and limit length
-  const sanitized = title
+  // Convert title to kebab-case slug and limit length
+  const slug = title
     .toLowerCase()
     .replace(/[^a-z0-9\s-]/g, '') // Remove special characters
     .replace(/\s+/g, '-') // Replace spaces with hyphens
     .replace(/-+/g, '-') // Replace multiple hyphens with single
     .replace(/^-|-$/g, ''); // Remove leading/trailing hyphens
-  
-  // Limit to 50 characters and add task ID prefix
-  const truncated = sanitized.substring(0, 50).replace(/-$/, '');
-  return `task-${taskId}-${truncated}`;
+
+  // Limit slug to 40 characters to keep total branch name reasonable
+  const truncatedSlug = slug.substring(0, 40).replace(/-$/, '');
+
+  // Use feature/{slug}-{task_id} format as specified in Phase 4.5
+  return `feature/${truncatedSlug}-${taskId}`;
 }
 
 /**
@@ -123,17 +127,12 @@ export async function startBranchTool(args: unknown, logger: Logger): Promise<To
         );
       }
 
-      // Check if task is in the right status for branch creation
-      if (task.status !== 'claimed' && task.status !== 'in_progress') {
-        throw new ConflictError(
-          `Task ${input.task_id} must be claimed before creating a branch`,
-          'TASK_NOT_CLAIMED',
-          { 
-            taskId: input.task_id,
-            currentStatus: task.status,
-            requiredStatuses: ['claimed', 'in_progress'],
-          }
-        );
+      // Validate state machine transition (Phase 4.5)
+      try {
+        validateActionForStateWithDetails('start_branch', task.status as any, input.task_id);
+      } catch (error) {
+        // Re-throw state machine errors directly (don't retry)
+        throw error;
       }
 
       // Use provided repo or task's repo

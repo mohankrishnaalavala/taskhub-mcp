@@ -26,6 +26,8 @@ import { listTasksTool } from './tools/list-tasks.js';
 import { claimTaskTool } from './tools/claim-task.js';
 import { startBranchTool } from './tools/start-branch.js';
 import { pushPatchTool } from './tools/push-patch.js';
+import { openPrTool } from './tools/open-pr.js';
+import { postReviewTool } from './tools/post-review.js';
 
 const serverLogger = createChildLogger({ component: 'mcp-server' });
 
@@ -241,6 +243,85 @@ async function createServer(): Promise<Server> {
             },
           },
         },
+        {
+          name: 'open_pr',
+          description: 'Create a GitHub pull request with auto-generated checklist from acceptance criteria',
+          inputSchema: {
+            type: 'object',
+            required: ['task_id'],
+            properties: {
+              task_id: {
+                type: 'number',
+                description: 'ID of the task to create a PR for',
+              },
+              repo: {
+                type: 'string',
+                pattern: '^[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+$',
+                description: 'Repository in format owner/repo (optional if task has repo)',
+              },
+              title: {
+                type: 'string',
+                minLength: 1,
+                maxLength: 200,
+                description: 'Custom PR title (optional, auto-generated if not provided)',
+              },
+              draft: {
+                type: 'boolean',
+                default: true,
+                description: 'Whether to create a draft PR (default: true)',
+              },
+              force: {
+                type: 'boolean',
+                default: false,
+                description: 'Force create non-draft PR even if policy requires draft',
+              },
+              dry_run: {
+                type: 'boolean',
+                default: false,
+                description: 'If true, simulate the operation without making changes',
+              },
+            },
+          },
+        },
+        {
+          name: 'post_review',
+          description: 'Post a review on a GitHub pull request with block/unblock functionality',
+          inputSchema: {
+            type: 'object',
+            required: ['notes'],
+            properties: {
+              task_id: {
+                type: 'number',
+                description: 'ID of the task to review (either task_id or pr_number required)',
+              },
+              pr_number: {
+                type: 'number',
+                description: 'PR number to review (either task_id or pr_number required)',
+              },
+              repo: {
+                type: 'string',
+                pattern: '^[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+$',
+                description: 'Repository in format owner/repo (optional if task has repo)',
+              },
+              notes: {
+                type: 'string',
+                minLength: 1,
+                maxLength: 2000,
+                description: 'Review notes and feedback (1-2000 characters)',
+              },
+              block: {
+                type: 'boolean',
+                default: false,
+                description: 'Whether this review blocks the PR from being merged',
+              },
+              dry_run: {
+                type: 'boolean',
+                default: false,
+                description: 'If true, simulate the operation without making changes',
+              },
+            },
+          },
+        },
       ],
     };
   });
@@ -279,6 +360,14 @@ async function createServer(): Promise<Server> {
 
         case 'push_patch':
           result = await pushPatchTool(args, toolLogger);
+          break;
+
+        case 'open_pr':
+          result = await openPrTool(args, toolLogger);
+          break;
+
+        case 'post_review':
+          result = await postReviewTool(args, toolLogger);
           break;
 
         default:

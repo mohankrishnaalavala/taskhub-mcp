@@ -52,6 +52,46 @@ export interface PushFilesOptions {
   dryRun?: boolean;
 }
 
+export interface CreatePullRequestOptions {
+  repo: GitHubRepo;
+  title: string;
+  body: string;
+  head: string; // branch name
+  base?: string; // defaults to default branch
+  draft?: boolean;
+  dryRun?: boolean;
+}
+
+export interface GitHubPullRequest {
+  number: number;
+  title: string;
+  body: string;
+  url: string;
+  draft: boolean;
+  head: {
+    ref: string; // branch name
+    sha: string;
+  };
+  base: {
+    ref: string; // base branch name
+  };
+}
+
+export interface CreateReviewOptions {
+  repo: GitHubRepo;
+  pullNumber: number;
+  body: string;
+  event: 'COMMENT' | 'APPROVE' | 'REQUEST_CHANGES';
+  dryRun?: boolean;
+}
+
+export interface GitHubReview {
+  id: number;
+  body: string;
+  state: string;
+  html_url: string;
+}
+
 /**
  * GitHub API client with authentication and retry logic
  */
@@ -423,6 +463,197 @@ export class GitHubClient {
 
       return failure(new GitHubApiError(
         'Unknown error pushing files',
+        'GITHUB_API_ERROR',
+        { options },
+        undefined,
+        error instanceof Error ? error : new Error(String(error))
+      ));
+    }
+  }
+
+  /**
+   * Create a pull request
+   */
+  async createPullRequest(options: CreatePullRequestOptions): Promise<Result<GitHubPullRequest>> {
+    const repoValidation = this.validateRepo(options.repo);
+    if (!repoValidation.success) {
+      return repoValidation;
+    }
+
+    if (options.dryRun) {
+      this.logger.info('DRY RUN: Would create pull request', { options });
+      return success({
+        number: 999,
+        title: options.title,
+        body: options.body,
+        url: `https://github.com/${options.repo.owner}/${options.repo.repo}/pull/999`,
+        draft: options.draft || false,
+        head: {
+          ref: options.head,
+          sha: 'dry-run-sha',
+        },
+        base: {
+          ref: options.base || 'main',
+        },
+      });
+    }
+
+    try {
+      this.logger.debug('Creating pull request', { options });
+
+      // Get repository info for default branch if not specified
+      let baseBranch = options.base;
+      if (!baseBranch) {
+        const repoInfoResult = await this.getRepository(options.repo);
+        if (!repoInfoResult.success) {
+          return repoInfoResult;
+        }
+        baseBranch = repoInfoResult.data.defaultBranch;
+      }
+
+      const { data: pr } = await this.octokit.rest.pulls.create({
+        owner: options.repo.owner,
+        repo: options.repo.repo,
+        title: options.title,
+        body: options.body,
+        head: options.head,
+        base: baseBranch,
+        draft: options.draft || false,
+      });
+
+      this.logger.info('Pull request created successfully', {
+        repo: options.repo,
+        prNumber: pr.number,
+        title: pr.title,
+        draft: pr.draft,
+      });
+
+      return success({
+        number: pr.number,
+        title: pr.title,
+        body: pr.body || '',
+        url: pr.html_url,
+        draft: pr.draft || false,
+        head: {
+          ref: pr.head.ref,
+          sha: pr.head.sha,
+        },
+        base: {
+          ref: pr.base.ref,
+        },
+      });
+    } catch (error) {
+      this.logger.error('Failed to create pull request', { options, error });
+
+      if (error instanceof Error) {
+        const statusCode = (error as any).status;
+
+        if (statusCode === 422) {
+          return failure(new ValidationError(
+            'Pull request creation failed - check if branch exists and has commits',
+            'PR_CREATION_FAILED',
+            { head: options.head, base: options.base },
+            error
+          ));
+        }
+
+        return failure(new GitHubApiError(
+          `Failed to create pull request: ${error.message}`,
+          'GITHUB_API_ERROR',
+          { options, statusCode },
+          undefined,
+          error
+        ));
+      }
+
+      return failure(new GitHubApiError(
+        'Unknown error creating pull request',
+        'GITHUB_API_ERROR',
+        { options },
+        undefined,
+        error instanceof Error ? error : new Error(String(error))
+      ));
+    }
+  }
+
+  /**
+   * Create a review on a pull request
+   */
+  async createReview(options: CreateReviewOptions): Promise<Result<GitHubReview>> {
+    const repoValidation = this.validateRepo(options.repo);
+    if (!repoValidation.success) {
+      return repoValidation;
+    }
+
+    if (options.dryRun) {
+      this.logger.info('DRY RUN: Would create review', { options });
+      return success({
+        id: 999,
+        body: options.body,
+        state: options.event.toLowerCase(),
+        html_url: `https://github.com/${options.repo.owner}/${options.repo.repo}/pull/${options.pullNumber}#pullrequestreview-999`,
+      });
+    }
+
+    try {
+      this.logger.debug('Creating pull request review', { options });
+
+      const { data: review } = await this.octokit.rest.pulls.createReview({
+        owner: options.repo.owner,
+        repo: options.repo.repo,
+        pull_number: options.pullNumber,
+        body: options.body,
+        event: options.event,
+      });
+
+      this.logger.info('Review created successfully', {
+        repo: options.repo,
+        prNumber: options.pullNumber,
+        reviewId: review.id,
+        event: options.event,
+      });
+
+      return success({
+        id: review.id,
+        body: review.body || '',
+        state: review.state,
+        html_url: review.html_url,
+      });
+    } catch (error) {
+      this.logger.error('Failed to create review', { options, error });
+
+      if (error instanceof Error) {
+        const statusCode = (error as any).status;
+
+        if (statusCode === 404) {
+          return failure(new ValidationError(
+            `Pull request #${options.pullNumber} not found`,
+            'PR_NOT_FOUND',
+            { pullNumber: options.pullNumber },
+            error
+          ));
+        }
+
+        if (statusCode === 422) {
+          return failure(new ValidationError(
+            'Review creation failed - check if PR is in a reviewable state',
+            'REVIEW_CREATION_FAILED',
+            { pullNumber: options.pullNumber, event: options.event },
+            error
+          ));
+        }
+
+        return failure(new GitHubApiError(
+          `Failed to create review: ${error.message}`,
+          'GITHUB_API_ERROR',
+          { options, statusCode },
+          undefined,
+          error
+        ));
+      }
+
+      return failure(new GitHubApiError(
+        'Unknown error creating review',
         'GITHUB_API_ERROR',
         { options },
         undefined,
