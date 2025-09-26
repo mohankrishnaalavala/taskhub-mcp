@@ -16,9 +16,6 @@ const envSchema = z.object({
   GITHUB_TOKEN: z.string().min(1, 'GitHub token is required'),
   ALLOWED_REPOS: z.string().min(1, 'At least one allowed repo is required'),
 
-  // Authentication
-  BEARER_TOKEN: z.string().min(1, 'Bearer token is required'),
-
   // Safety & Limits
   DRY_RUN: z.coerce.boolean().default(true),
   MAX_FILE_SIZE_MB: z.coerce.number().default(1),
