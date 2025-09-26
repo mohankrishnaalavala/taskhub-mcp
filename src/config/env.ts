@@ -33,6 +33,18 @@ const envSchema = z.object({
   
   // Health Check
   HEALTH_CHECK_ENABLED: z.coerce.boolean().default(true),
+
+  // HTTP Transport (Phase 2.5)
+  TRANSPORTS: z.string().default('stdio'),
+  BASE_PATH: z.string().default('/mcp'),
+
+  // JWT Authentication
+  JWT_SECRET: z.string().default('your-super-secret-jwt-key-change-this-in-production'),
+  JWT_TTL_MIN: z.coerce.number().default(30),
+
+  // Idempotency
+  IDEMPOTENCY_REQUIRED: z.coerce.boolean().default(false),
+  REQUEST_ID_HEADER: z.string().default('x-request-id'),
 });
 
 // Validate and export configuration
@@ -54,6 +66,8 @@ export const derivedConfig = {
   allowedRepos: config.ALLOWED_REPOS.split(',').map(repo => repo.trim()),
   maxFileSizeBytes: config.MAX_FILE_SIZE_MB * 1024 * 1024,
   maxPatchSizeBytes: config.MAX_PATCH_SIZE_MB * 1024 * 1024,
+  transports: config.TRANSPORTS.split(',').map(t => t.trim()),
+  jwtTtlMs: config.JWT_TTL_MIN * 60 * 1000,
 };
 
 // Export types

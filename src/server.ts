@@ -15,10 +15,11 @@ import {
   CallToolResult,
 } from '@modelcontextprotocol/sdk/types.js';
 
-import { config } from './config/env.js';
+import { config, derivedConfig } from './config/env.js';
 import { logger, createChildLogger } from './lib/logger.js';
 import { initializeDatabase, closeDatabase } from './lib/database.js';
 import { ToolResult } from './types/mcp.js';
+import { startHttpServer } from './http/server.js';
 
 // Import tool handlers
 import { submitSpecTool } from './tools/submit-spec.js';
@@ -449,13 +450,34 @@ async function main() {
       process.exit(1);
     }
 
-    // Create and start server
-    const server = await createServer();
-    const transport = new StdioServerTransport();
-    
-    await server.connect(transport);
-    
-    serverLogger.info('TaskHub MCP Server started successfully');
+    // Determine which transports to start
+    const transports = derivedConfig.transports;
+    const servers: any[] = [];
+
+    // Start stdio transport (default)
+    if (transports.includes('stdio')) {
+      const mcpServer = await createServer();
+      const transport = new StdioServerTransport();
+      await mcpServer.connect(transport);
+      servers.push({ type: 'stdio', server: mcpServer });
+      serverLogger.info('MCP stdio transport started');
+    }
+
+    // Start HTTP transport (Phase 2.5)
+    if (transports.includes('http')) {
+      const httpServer = await startHttpServer();
+      servers.push({ type: 'http', server: httpServer });
+      serverLogger.info('HTTP transport started', { port: config.PORT });
+    }
+
+    if (servers.length === 0) {
+      throw new Error('No transports configured. Set TRANSPORTS environment variable.');
+    }
+
+    serverLogger.info('TaskHub MCP Server started successfully', {
+      transports: transports,
+      port: transports.includes('http') ? config.PORT : undefined,
+    });
 
     // Graceful shutdown handling
     const shutdown = async () => {

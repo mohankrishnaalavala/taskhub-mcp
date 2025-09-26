@@ -43,6 +43,18 @@ NODE_ENV=production
 # Database (SQLite default, PostgreSQL recommended for production)
 DATABASE_URL="file:./data/taskhub.db"
 # DATABASE_URL="postgresql://user:pass@localhost:5432/taskhub"
+
+# Transport Configuration (Phase 2.5)
+TRANSPORTS=stdio,http  # Enable both stdio and HTTP transports
+PORT=3000              # HTTP server port
+BASE_PATH=/mcp         # HTTP API base path
+
+# JWT Authentication (Phase 2.5)
+JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
+JWT_TTL_MIN=30         # Token TTL in minutes
+
+# Idempotency (Phase 2.5)
+IDEMPOTENCY_REQUIRED=false  # Set to true to require idempotency keys
 ```
 
 ### 3. Deploy with Docker

@@ -54,3 +54,20 @@ model Event {
 
   @@map("events")
 }
+
+// Idempotency tracking for HTTP requests (Phase 2.5)
+model IdempotencyKey {
+  id          String   @id // The idempotency key
+  method      String   // HTTP method
+  path        String   // Request path
+  userId      String?  // User ID from JWT (optional)
+  requestHash String   // Hash of request body
+  response    String   // Stored response (JSON)
+  statusCode  Int      // HTTP status code
+  createdAt   DateTime @default(now())
+  expiresAt   DateTime // When this key expires
+
+  @@map("idempotency_keys")
+  @@index([expiresAt])
+  @@index([userId])
+}
