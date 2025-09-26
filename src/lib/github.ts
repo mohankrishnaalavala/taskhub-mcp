@@ -293,7 +293,7 @@ export class GitHubClient {
       this.logger.debug('Creating branch', { options });
 
       // Get the source branch SHA
-      const fromBranch = options.fromBranch || 'main';
+      const fromBranch = options.fromBranch ?? 'main';
       const { data: refData } = await this.octokit.rest.git.getRef({
         owner: options.repo.owner,
         repo: options.repo.repo,
@@ -520,13 +520,13 @@ export class GitHubClient {
         title: options.title,
         body: options.body,
         url: `https://github.com/${options.repo.owner}/${options.repo.repo}/pull/999`,
-        draft: options.draft || false,
+        draft: options.draft ?? false,
         head: {
           ref: options.head,
           sha: 'dry-run-sha',
         },
         base: {
-          ref: options.base || 'main',
+          ref: options.base ?? 'main',
         },
       });
     }
@@ -551,7 +551,7 @@ export class GitHubClient {
         body: options.body,
         head: options.head,
         base: baseBranch,
-        draft: options.draft || false,
+        draft: options.draft ?? false,
       });
 
       this.logger.info('Pull request created successfully', {
@@ -564,9 +564,9 @@ export class GitHubClient {
       return success({
         number: pr.number,
         title: pr.title,
-        body: pr.body || '',
+        body: pr.body ?? '',
         url: pr.html_url,
-        draft: pr.draft || false,
+        draft: pr.draft ?? false,
         head: {
           ref: pr.head.ref,
           sha: pr.head.sha,

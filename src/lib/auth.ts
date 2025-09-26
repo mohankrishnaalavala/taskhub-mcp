@@ -100,7 +100,7 @@ export function extractTokenFromHeader(authHeader: string | undefined): string |
     return null;
   }
 
-  return parts[1] || null;
+  return parts[1] ?? null;
 }
 
 /**
@@ -203,6 +203,7 @@ export function refreshToken(currentToken: string): string {
   const user = verifyToken(currentToken);
 
   // Remove JWT-specific fields before regenerating
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { iat, exp, ...userContext } = user;
 
   return generateToken(userContext);

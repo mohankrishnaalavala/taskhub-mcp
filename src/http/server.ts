@@ -17,6 +17,7 @@ import {
   AuthenticationError,
   AuthorizationError,
   UserContext,
+  validatePermissions,
 } from '../lib/auth.js';
 import {
   checkIdempotencyKey,
@@ -32,7 +33,7 @@ import { startBranchTool } from '../tools/start-branch.js';
 import { pushPatchTool } from '../tools/push-patch.js';
 import { openPrTool } from '../tools/open-pr.js';
 import { postReviewTool } from '../tools/post-review.js';
-import { validatePermissions } from '../lib/auth.js';
+import { ToolResult } from '../types/mcp.js';
 
 // Extend Fastify request with user context
 declare module 'fastify' {
@@ -370,7 +371,7 @@ export async function startHttpServer(): Promise<FastifyInstance> {
 /**
  * Validate that user is authenticated and has required permissions
  */
-function validateUserAndPermissions(user: any, operation: string): void {
+function validateUserAndPermissions(user: UserContext | null, operation: string): void {
   if (!user) {
     throw new Error('User not authenticated');
   }
@@ -380,13 +381,13 @@ function validateUserAndPermissions(user: any, operation: string): void {
 /**
  * Helper function to handle MCP tool results
  */
-function handleToolResult(result: any, reply: FastifyReply) {
+function handleToolResult(result: ToolResult, reply: FastifyReply) {
   if (result.isError) {
     reply.code(400);
-    return result.content?.[0] || { error: 'Unknown error' };
+    return result.content?.[0] ?? { error: 'Unknown error' };
   }
 
-  return JSON.parse(result.content?.[0]?.text || '{}');
+  return JSON.parse(result.content?.[0]?.text ?? '{}');
 }
 
 /**
@@ -451,7 +452,7 @@ async function registerRoutes(server: FastifyInstance): Promise<void> {
   server.post(`${basePath}/tasks`, async (request, reply) => {
     validateUserAndPermissions(request.user, 'submit_spec');
 
-    const result = await submitSpecTool(request.body as any, logger);
+    const result = await submitSpecTool(request.body as unknown, logger);
     return handleToolResult(result, reply);
   });
 
@@ -460,7 +461,7 @@ async function registerRoutes(server: FastifyInstance): Promise<void> {
     validateUserAndPermissions(request.user, 'list_tasks');
 
     // Convert query parameters to proper types
-    const query = request.query as any;
+    const query = request.query as Record<string, unknown>;
     const processedQuery = {
       ...query,
       limit: query.limit ? parseInt(query.limit, 10) : undefined,
@@ -476,7 +477,7 @@ async function registerRoutes(server: FastifyInstance): Promise<void> {
     validateUserAndPermissions(request.user, 'claim_task');
 
     const { id } = request.params as { id: string };
-    const body = request.body as any;
+    const body = request.body as Record<string, unknown>;
 
     const result = await claimTaskTool(
       {
@@ -494,7 +495,7 @@ async function registerRoutes(server: FastifyInstance): Promise<void> {
     validateUserAndPermissions(request.user, 'start_branch');
 
     const { id } = request.params as { id: string };
-    const body = request.body as any;
+    const body = request.body as Record<string, unknown>;
 
     const result = await startBranchTool(
       {
@@ -512,7 +513,7 @@ async function registerRoutes(server: FastifyInstance): Promise<void> {
     validateUserAndPermissions(request.user, 'push_patch');
 
     const { id } = request.params as { id: string };
-    const body = request.body as any;
+    const body = request.body as Record<string, unknown>;
 
     const result = await pushPatchTool(
       {
@@ -530,7 +531,7 @@ async function registerRoutes(server: FastifyInstance): Promise<void> {
     validateUserAndPermissions(request.user, 'open_pr');
 
     const { id } = request.params as { id: string };
-    const body = request.body as any;
+    const body = request.body as Record<string, unknown>;
 
     const result = await openPrTool(
       {
@@ -548,7 +549,7 @@ async function registerRoutes(server: FastifyInstance): Promise<void> {
     validateUserAndPermissions(request.user, 'post_review');
 
     const { id } = request.params as { id: string };
-    const body = request.body as any;
+    const body = request.body as Record<string, unknown>;
 
     const result = await postReviewTool(
       {
@@ -565,7 +566,7 @@ async function registerRoutes(server: FastifyInstance): Promise<void> {
   server.post(`${basePath}/reviews`, async (request, reply) => {
     validateUserAndPermissions(request.user, 'post_review');
 
-    const result = await postReviewTool(request.body as any, logger);
+    const result = await postReviewTool(request.body as unknown, logger);
     return handleToolResult(result, reply);
   });
 }

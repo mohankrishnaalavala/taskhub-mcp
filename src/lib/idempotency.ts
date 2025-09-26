@@ -8,7 +8,6 @@
 import { createHash } from 'crypto';
 import { prisma } from './database.js';
 import { logger } from './logger.js';
-import { config } from '../config/env.js';
 
 export interface IdempotencyRequest {
   key: string;
@@ -154,7 +153,7 @@ export async function storeIdempotencyResponse(
         id: request.key,
         method: request.method,
         path: request.path,
-        userId: request.userId || null,
+        userId: request.userId ?? null,
         requestHash,
         response: JSON.stringify(storedResponse),
         statusCode,
