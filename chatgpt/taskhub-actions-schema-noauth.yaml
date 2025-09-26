@@ -1,0 +1,434 @@
+openapi: 3.0.0
+info:
+  title: TaskHub MCP API
+  description: Task management and GitHub workflow automation
+  version: 1.0.0
+servers:
+  - url: https://queue-memorabilia-background-earning.trycloudflare.com
+    description: TaskHub MCP Server
+
+paths:
+  /healthz:
+    get:
+      operationId: checkHealth
+      summary: Health check
+      description: Check if the server is running
+      responses:
+        '200':
+          description: Server is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+
+  /auth/demo-token:
+    post:
+      operationId: getDemoToken
+      summary: Get demo authentication token
+      description: Generate a demo JWT token for development
+      responses:
+        '200':
+          description: Demo token generated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                    description: JWT token for authentication
+                  type:
+                    type: string
+                    example: "Bearer"
+
+  /mcp/tasks:
+    get:
+      operationId: listTasks
+      summary: List all tasks
+      description: Retrieve a list of tasks
+      parameters:
+        - name: Authorization
+          in: header
+          required: false
+          schema:
+            type: string
+            example: "Bearer your-jwt-token"
+        - name: status
+          in: query
+          description: Filter tasks by status
+          schema:
+            type: string
+            enum: [todo, claimed, in_progress, review, done]
+        - name: limit
+          in: query
+          description: Number of tasks to return
+          schema:
+            type: integer
+            default: 10
+            maximum: 100
+      responses:
+        '200':
+          description: List of tasks retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tasks:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        task_id:
+                          type: integer
+                        title:
+                          type: string
+                        description:
+                          type: string
+                        status:
+                          type: string
+                        assignee:
+                          type: string
+                        repo:
+                          type: string
+                        created_at:
+                          type: string
+                        updated_at:
+                          type: string
+                  total:
+                    type: integer
+                  limit:
+                    type: integer
+                  offset:
+                    type: integer
+
+    post:
+      operationId: createTask
+      summary: Create a new task
+      description: Create a new development task
+      parameters:
+        - name: Authorization
+          in: header
+          required: false
+          schema:
+            type: string
+            example: "Bearer your-jwt-token"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - title
+                - description
+                - acceptance_criteria
+              properties:
+                title:
+                  type: string
+                  description: Task title
+                  example: "Add user authentication"
+                  minLength: 1
+                  maxLength: 200
+                description:
+                  type: string
+                  description: Detailed task description
+                  example: "Implement JWT-based authentication system"
+                  minLength: 1
+                  maxLength: 2000
+                repo:
+                  type: string
+                  description: GitHub repository in format owner/repo
+                  example: "myorg/myapp"
+                  pattern: "^[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+$"
+                acceptance_criteria:
+                  type: array
+                  description: List of acceptance criteria
+                  items:
+                    type: string
+                  example: ["Login form works", "JWT tokens generated"]
+                  minItems: 1
+                  maxItems: 20
+      responses:
+        '200':
+          description: Task created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  task_id:
+                    type: integer
+                  title:
+                    type: string
+                  description:
+                    type: string
+                  status:
+                    type: string
+                  repo:
+                    type: string
+                  acceptance_criteria:
+                    type: array
+                    items:
+                      type: string
+                  created_at:
+                    type: string
+
+  /mcp/tasks/{id}/claim:
+    post:
+      operationId: claimTask
+      summary: Claim a task
+      description: Assign a task to a developer
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: Authorization
+          in: header
+          required: false
+          schema:
+            type: string
+            example: "Bearer your-jwt-token"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - assignee
+              properties:
+                assignee:
+                  type: string
+                  description: Username of the developer
+                  example: "developer-username"
+      responses:
+        '200':
+          description: Task claimed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  task_id:
+                    type: integer
+                  title:
+                    type: string
+                  status:
+                    type: string
+                  assignee:
+                    type: string
+                  claimed_at:
+                    type: string
+
+  /mcp/tasks/{id}/branch:
+    post:
+      operationId: createBranch
+      summary: Create a branch for the task
+      description: Create a GitHub branch for development
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: Authorization
+          in: header
+          required: false
+          schema:
+            type: string
+            example: "Bearer your-jwt-token"
+      responses:
+        '200':
+          description: Branch created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  branch_name:
+                    type: string
+                    example: "feature/user-auth-1"
+                  status:
+                    type: string
+
+  /mcp/tasks/{id}/patch:
+    post:
+      operationId: pushPatch
+      summary: Push code changes
+      description: Commit and push code changes to the task branch
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: Authorization
+          in: header
+          required: false
+          schema:
+            type: string
+            example: "Bearer your-jwt-token"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - files
+                - message
+              properties:
+                files:
+                  type: array
+                  items:
+                    type: object
+                    required:
+                      - path
+                      - content
+                    properties:
+                      path:
+                        type: string
+                        example: "src/components/LoginForm.tsx"
+                      content:
+                        type: string
+                        example: "import React from 'react';\n\nexport const LoginForm = () => {\n  return <form>...</form>;\n};"
+                message:
+                  type: string
+                  example: "feat: implement user authentication"
+                repo:
+                  type: string
+                  description: GitHub repository
+                  example: "myorg/myapp"
+                dry_run:
+                  type: boolean
+                  default: false
+      responses:
+        '200':
+          description: Code changes pushed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  commit_sha:
+                    type: string
+                  status:
+                    type: string
+
+  /mcp/tasks/{id}/pr:
+    post:
+      operationId: openPullRequest
+      summary: Open a pull request
+      description: Create a pull request for the task
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: Authorization
+          in: header
+          required: false
+          schema:
+            type: string
+            example: "Bearer your-jwt-token"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                  example: "Add user authentication"
+                body:
+                  type: string
+                  example: "Implements JWT-based authentication system"
+                repo:
+                  type: string
+                  description: GitHub repository
+                  example: "myorg/myapp"
+                dry_run:
+                  type: boolean
+                  default: false
+      responses:
+        '200':
+          description: Pull request created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pr_number:
+                    type: integer
+                  title:
+                    type: string
+                  url:
+                    type: string
+                  status:
+                    type: string
+                  draft:
+                    type: boolean
+
+  /mcp/tasks/{id}/review:
+    post:
+      operationId: postReview
+      summary: Post a code review
+      description: Submit a code review on the pull request
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: Authorization
+          in: header
+          required: false
+          schema:
+            type: string
+            example: "Bearer your-jwt-token"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - notes
+                - block
+              properties:
+                notes:
+                  type: string
+                  example: "Great implementation! Looks good to merge."
+                block:
+                  type: boolean
+                  description: Whether this review blocks the PR
+                  example: false
+                repo:
+                  type: string
+                  description: GitHub repository
+                  example: "myorg/myapp"
+                dry_run:
+                  type: boolean
+                  default: false
+      responses:
+        '200':
+          description: Review posted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  review_id:
+                    type: string
+                  status:
+                    type: string
+                  block:
+                    type: boolean

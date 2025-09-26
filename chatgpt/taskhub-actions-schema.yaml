@@ -10,7 +10,7 @@ info:
 servers:
   - url: http://localhost:3000
     description: Local development server
-  - url: https://your-production-domain.com
+  - url: https://queue-memorabilia-background-earning.trycloudflare.com
     description: Production server
 
 components:

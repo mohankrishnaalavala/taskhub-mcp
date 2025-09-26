@@ -42,6 +42,10 @@ const envSchema = z.object({
   // Idempotency
   IDEMPOTENCY_REQUIRED: z.coerce.boolean().default(false),
   REQUEST_ID_HEADER: z.string().default('x-request-id'),
+
+  // Add to environment schema
+  CHATGPT_MODE: z.coerce.boolean().default(false),
+  REQUIRE_AUTH: z.coerce.boolean().default(true),
 });
 
 // Validate and export configuration

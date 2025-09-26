@@ -110,36 +110,28 @@ async function registerMiddleware(server: FastifyInstance): Promise<void> {
     });
   });
 
-  // Authentication middleware
-  server.addHook('preHandler', async (request, _reply) => {
-    // Skip auth for health check and public endpoints
-    if (request.url === '/healthz' || request.url === '/' || request.url === '/auth/demo-token') {
-      return;
-    }
-
-    const authHeader = request.headers.authorization;
-    const token = extractTokenFromHeader(authHeader);
-
-    if (!token) {
-      throw new AuthenticationError('Missing authorization token', 'MISSING_TOKEN');
-    }
-
-    try {
-      const user = verifyToken(token);
-      request.user = user;
-
-      logger.debug('User authenticated', {
-        userId: user.userId,
-        username: user.username,
-        requestId: request.id,
-      });
-    } catch (error) {
-      if (error instanceof AuthenticationError) {
-        throw error;
+  // Authentication middleware (conditional)
+  if (!config.CHATGPT_MODE && config.REQUIRE_AUTH) {
+    logger.info('Authentication enabled');
+    registerAuthMiddleware(server);
+  } else {
+    logger.info('Authentication disabled - running in no-auth mode');
+    // Add mock user for no-auth mode
+    server.addHook('preHandler', async (request) => {
+      // Skip for health check and auth endpoints
+      if (request.url === '/healthz' || request.url === '/auth/demo-token') {
+        return;
       }
-      throw new AuthenticationError('Invalid token', 'INVALID_TOKEN');
-    }
-  });
+      
+      request.user = {
+        userId: 'demo-user',
+        username: 'demo-user',
+        email: 'demo@taskhub.local',
+        roles: ['developer', 'admin'],
+        permissions: ['tasks:read', 'tasks:write', 'github:read', 'github:write'],
+      };
+    });
+  }
 
   // Idempotency middleware
   server.addHook('preHandler', async (request, reply) => {
@@ -228,8 +220,8 @@ async function registerMiddleware(server: FastifyInstance): Promise<void> {
         await storeIdempotencyResponse(idempotencyRequest, responseData, statusCode);
       } catch (error) {
         logger.error('Failed to store idempotency response', {
-          key: request.idempotencyKey,
-          error: error instanceof Error ? error.message : String(error),
+          error: error.message,
+          requestId: request.id,
         });
       }
     }
@@ -369,13 +361,13 @@ export async function startHttpServer(): Promise<FastifyInstance> {
 }
 
 /**
- * Validate that user is authenticated and has required permissions
+ * Validate user permissions (only when auth is enabled)
  */
-function validateUserAndPermissions(user: UserContext | null | undefined, operation: string): void {
-  if (!user) {
-    throw new Error('User not authenticated');
+function validateUserAndPermissions(user: UserContext, permission: string): void {
+  if (!config.CHATGPT_MODE && config.REQUIRE_AUTH) {
+    validatePermissions(user, [permission]);
   }
-  validatePermissions(user, operation);
+  // Skip validation in no-auth mode
 }
 
 /**
@@ -395,81 +387,37 @@ function handleToolResult(result: ToolResult, reply: FastifyReply) {
  */
 async function registerRoutes(server: FastifyInstance): Promise<void> {
   // Health check endpoint
-  server.get('/healthz', async (_request, _reply) => {
+  server.get('/healthz', async () => {
+    return { status: 'healthy', timestamp: new Date().toISOString() };
+  });
+
+  // Demo token endpoint (always available)
+  server.post('/auth/demo-token', async () => {
+    const token = generateDemoToken();
     return {
-      status: 'healthy',
-      timestamp: new Date().toISOString(),
-      version: '1.0.0',
-      uptime: process.uptime(),
+      token,
+      type: 'Bearer',
+      expires_in: derivedConfig.jwtTtlSeconds,
     };
   });
 
-  // Development token endpoint (no auth required, only in development)
-  if (config.NODE_ENV === 'development') {
-    server.post('/auth/demo-token', async (_request, _reply) => {
-      const token = generateDemoToken();
-      return {
-        token,
-        type: 'Bearer',
-        expiresIn: `${config.JWT_TTL_MIN}m`,
-        user: {
-          userId: 'demo-user-1',
-          username: 'demo-user',
-          email: 'demo@taskhub.local',
-          roles: ['developer', 'admin'],
-        },
-      };
-    });
-  }
+  // Task endpoints
+  server.get('/mcp/tasks', async (request) => {
+    const user = request.user!;
+    validateUserAndPermissions(user, 'read');
 
-  // Root endpoint
-  server.get('/', async (_request, _reply) => {
-    return {
-      name: 'TaskHub MCP Server',
-      version: '1.0.0',
-      description: 'HTTP transport for TaskHub MCP tools',
-      endpoints: {
-        health: '/healthz',
-        tasks: {
-          submit: 'POST /mcp/tasks',
-          list: 'GET /mcp/tasks',
-          claim: 'POST /mcp/tasks/:id/claim',
-        },
-        github: {
-          branch: 'POST /mcp/tasks/:id/branch',
-          patch: 'POST /mcp/tasks/:id/patch',
-          pr: 'POST /mcp/tasks/:id/pr',
-          review: 'POST /mcp/tasks/:id/review',
-        },
-      },
-    };
+    const { status, limit = 10, offset = 0 } = request.query as any;
+    
+    const result = await listTasksTool({ status, limit, offset }, logger);
+    return handleToolResult(result, request.reply);
   });
 
-  // MCP tool endpoints
-  const basePath = config.BASE_PATH;
+  server.post('/mcp/tasks', async (request) => {
+    const user = request.user!;
+    validateUserAndPermissions(user, 'write');
 
-  // submit_spec -> POST /mcp/tasks
-  server.post(`${basePath}/tasks`, async (request, reply) => {
-    validateUserAndPermissions(request.user, 'submit_spec');
-
-    const result = await submitSpecTool(request.body as unknown, logger);
-    return handleToolResult(result, reply);
-  });
-
-  // list_tasks -> GET /mcp/tasks
-  server.get(`${basePath}/tasks`, async (request, reply) => {
-    validateUserAndPermissions(request.user, 'list_tasks');
-
-    // Convert query parameters to proper types
-    const query = request.query as Record<string, unknown>;
-    const processedQuery = {
-      ...query,
-      limit: query.limit ? parseInt(String(query.limit), 10) : undefined,
-      offset: query.offset ? parseInt(String(query.offset), 10) : undefined,
-    };
-
-    const result = await listTasksTool(processedQuery, logger);
-    return handleToolResult(result, reply);
+    const result = await submitSpecTool(request.body, logger);
+    return handleToolResult(result, request.reply);
   });
 
   // claim_task -> POST /mcp/tasks/:id/claim
@@ -568,5 +516,28 @@ async function registerRoutes(server: FastifyInstance): Promise<void> {
 
     const result = await postReviewTool(request.body as unknown, logger);
     return handleToolResult(result, reply);
+  });
+}
+
+/**
+ * Register authentication middleware (only when auth is enabled)
+ */
+function registerAuthMiddleware(server: FastifyInstance): void {
+  server.addHook('preHandler', async (request, reply) => {
+    // Skip auth for health check and demo token endpoints
+    if (request.url === '/healthz' || request.url === '/auth/demo-token') {
+      return;
+    }
+
+    try {
+      const token = extractTokenFromHeader(request.headers.authorization);
+      const user = await verifyToken(token);
+      request.user = user;
+    } catch (error) {
+      if (error instanceof AuthenticationError || error instanceof AuthorizationError) {
+        throw error;
+      }
+      throw new AuthenticationError('Invalid authentication token', 'INVALID_TOKEN');
+    }
   });
 }
