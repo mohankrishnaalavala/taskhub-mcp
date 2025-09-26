@@ -138,6 +138,6 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 
-#Agent
-AgentPrompts.md
-AgentInstructions.md
+# Agent files
+AGENT_PROMPTS.md
+AGENT_INSTRUCTIONS.md

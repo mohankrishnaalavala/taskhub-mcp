@@ -1,0 +1,56 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Task {
+  id                Int         @id @default(autoincrement())
+  title             String
+  description       String
+  status            String      @default("todo") // todo, claimed, in_progress, review, done
+  assignee          String?
+  repo              String?
+  branch            String?
+  acceptanceCriteria String      // JSON string for SQLite compatibility
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+  artifacts         Artifact[]
+  events            Event[]
+
+  @@map("tasks")
+}
+
+model Artifact {
+  id        String   @id @default(cuid())
+  taskId    Int
+  type      String   // commit, patch, review, pr
+  url       String?
+  sha256    String?
+  metadata  String?  // JSON string for SQLite compatibility
+  createdAt DateTime @default(now())
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@map("artifacts")
+}
+
+model Event {
+  id        String   @id @default(cuid())
+  taskId    Int?
+  actor     String
+  action    String   // submit_spec, claim_task, push_patch, open_pr, post_review, etc.
+  targetId  String?
+  payload   String   // JSON string for SQLite compatibility
+  success   Boolean  @default(true)
+  error     String?
+  createdAt DateTime @default(now())
+  task      Task?    @relation(fields: [taskId], references: [id], onDelete: SetNull)
+
+  @@map("events")
+}

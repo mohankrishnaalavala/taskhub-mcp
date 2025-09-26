@@ -1,0 +1,220 @@
+import { z } from 'zod';
+import { ValidationError, Result, success, failure } from '../types/errors.js';
+import { derivedConfig } from '../config/env.js';
+
+// Common validation patterns
+const repoPattern = /^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/;
+const filePathPattern = /^[^/].*[^/]$/;
+
+// Task status enum
+export const TaskStatus = z.enum(['todo', 'claimed', 'in_progress', 'review', 'done']);
+export type TaskStatus = z.infer<typeof TaskStatus>;
+
+// Artifact type enum
+export const ArtifactType = z.enum(['commit', 'patch', 'review', 'pr']);
+export type ArtifactType = z.infer<typeof ArtifactType>;
+
+// MCP Tool Schemas as defined in readme.md
+
+// submit_spec schema
+export const SubmitSpecSchema = z.object({
+  title: z.string().min(3).max(140),
+  description: z.string().min(10).max(5000),
+  acceptance_criteria: z.array(z.string()).min(1).max(20),
+  repo: z.string().regex(repoPattern).optional(),
+});
+export type SubmitSpecInput = z.infer<typeof SubmitSpecSchema>;
+
+// list_tasks schema
+export const ListTasksSchema = z.object({
+  status: TaskStatus.optional(),
+  assignee: z.string().optional(),
+  repo: z.string().regex(repoPattern).optional(),
+  limit: z.number().min(1).max(100).optional().default(50),
+  offset: z.number().min(0).optional().default(0),
+});
+export type ListTasksInput = z.infer<typeof ListTasksSchema>;
+
+// claim_task schema
+export const ClaimTaskSchema = z.object({
+  task_id: z.number().int().min(1),
+  assignee: z.string().min(1),
+});
+export type ClaimTaskInput = z.infer<typeof ClaimTaskSchema>;
+
+// start_branch schema
+export const StartBranchSchema = z.object({
+  task_id: z.number().int().min(1),
+  repo: z.string().regex(repoPattern),
+  base: z.string().default('main'),
+});
+export type StartBranchInput = z.infer<typeof StartBranchSchema>;
+
+// File schema for push_patch
+export const FileSchema = z.object({
+  path: z.string().regex(filePathPattern),
+  content: z.string(),
+  encoding: z.enum(['utf8', 'base64']).default('utf8'),
+});
+export type FileInput = z.infer<typeof FileSchema>;
+
+// push_patch schema
+export const PushPatchSchema = z.object({
+  task_id: z.number().int().min(1),
+  commit_message: z.string().min(10).max(200),
+  files: z.array(FileSchema).min(1).max(50),
+});
+export type PushPatchInput = z.infer<typeof PushPatchSchema>;
+
+// open_pr schema
+export const OpenPrSchema = z.object({
+  task_id: z.number().int().min(1),
+  repo: z.string().regex(repoPattern),
+  title: z.string().optional(),
+  body: z.string().optional(),
+  draft: z.boolean().default(true),
+});
+export type OpenPrInput = z.infer<typeof OpenPrSchema>;
+
+// post_review schema
+export const PostReviewSchema = z.object({
+  task_id: z.number().int().optional(),
+  pr_number: z.number().int().optional(),
+  notes: z.string().min(10),
+  block: z.boolean().default(false),
+  approve: z.boolean().default(false),
+}).refine(
+  (data) => data.task_id !== undefined || data.pr_number !== undefined,
+  {
+    message: "Either task_id or pr_number must be provided",
+    path: ["task_id", "pr_number"],
+  }
+);
+export type PostReviewInput = z.infer<typeof PostReviewSchema>;
+
+// Validation utility functions
+
+/**
+ * Validate input against a Zod schema
+ */
+export function validateInput<T>(
+  schema: z.ZodSchema<T>,
+  input: unknown
+): Result<T> {
+  try {
+    const result = schema.safeParse(input);
+    
+    if (!result.success) {
+      const errorDetails = result.error.errors.map(err => ({
+        path: err.path.join('.'),
+        message: err.message,
+        code: err.code,
+      }));
+      
+      return failure(new ValidationError(
+        'Input validation failed',
+        'VALIDATION_FAILED',
+        { errors: errorDetails }
+      ));
+    }
+    
+    return success(result.data);
+  } catch (error) {
+    return failure(new ValidationError(
+      'Validation error',
+      'VALIDATION_ERROR',
+      undefined,
+      error instanceof Error ? error : new Error(String(error))
+    ));
+  }
+}
+
+/**
+ * Validate repository against allowlist
+ */
+export function validateRepo(repo: string): Result<string> {
+  if (!derivedConfig.allowedRepos.includes(repo)) {
+    return failure(new ValidationError(
+      `Repository '${repo}' is not in the allowed list`,
+      'REPO_NOT_ALLOWED',
+      { repo, allowedRepos: derivedConfig.allowedRepos }
+    ));
+  }
+  
+  return success(repo);
+}
+
+/**
+ * Validate file path for security
+ */
+export function validateFilePath(path: string): Result<string> {
+  // Check for path traversal
+  if (path.includes('../') || path.includes('..\\')) {
+    return failure(new ValidationError(
+      'File path contains path traversal sequences',
+      'INVALID_FILE_PATH',
+      { path }
+    ));
+  }
+  
+  // Check for hidden files
+  if (path.startsWith('.') || path.includes('/.')) {
+    return failure(new ValidationError(
+      'Hidden files are not allowed',
+      'HIDDEN_FILE_NOT_ALLOWED',
+      { path }
+    ));
+  }
+  
+  // Check for null bytes
+  if (path.includes('\0')) {
+    return failure(new ValidationError(
+      'File path contains null bytes',
+      'INVALID_FILE_PATH',
+      { path }
+    ));
+  }
+  
+  return success(path);
+}
+
+/**
+ * Validate file size
+ */
+export function validateFileSize(content: string, encoding: 'utf8' | 'base64' = 'utf8'): Result<void> {
+  const sizeBytes = encoding === 'base64' 
+    ? Buffer.from(content, 'base64').length 
+    : Buffer.byteLength(content, 'utf8');
+  
+  if (sizeBytes > derivedConfig.maxFileSizeBytes) {
+    return failure(new ValidationError(
+      `File size ${sizeBytes} bytes exceeds maximum of ${derivedConfig.maxFileSizeBytes} bytes`,
+      'FILE_TOO_LARGE',
+      { sizeBytes, maxSizeBytes: derivedConfig.maxFileSizeBytes }
+    ));
+  }
+  
+  return success(undefined);
+}
+
+/**
+ * Validate total patch size
+ */
+export function validatePatchSize(files: FileInput[]): Result<void> {
+  const totalSize = files.reduce((sum, file) => {
+    const sizeBytes = file.encoding === 'base64'
+      ? Buffer.from(file.content, 'base64').length
+      : Buffer.byteLength(file.content, 'utf8');
+    return sum + sizeBytes;
+  }, 0);
+  
+  if (totalSize > derivedConfig.maxPatchSizeBytes) {
+    return failure(new ValidationError(
+      `Total patch size ${totalSize} bytes exceeds maximum of ${derivedConfig.maxPatchSizeBytes} bytes`,
+      'PATCH_TOO_LARGE',
+      { totalSizeBytes: totalSize, maxSizeBytes: derivedConfig.maxPatchSizeBytes }
+    ));
+  }
+  
+  return success(undefined);
+}
