@@ -10,12 +10,13 @@ import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
 import { config, derivedConfig } from '../config/env.js';
 import { logger } from '../lib/logger.js';
-import { 
-  extractTokenFromHeader, 
-  verifyToken, 
-  AuthenticationError, 
+import {
+  extractTokenFromHeader,
+  verifyToken,
+  generateDemoToken,
+  AuthenticationError,
   AuthorizationError,
-  UserContext 
+  UserContext
 } from '../lib/auth.js';
 import {
   checkIdempotencyKey,
@@ -113,21 +114,35 @@ async function registerMiddleware(server: FastifyInstance): Promise<void> {
     });
   });
 
-  // Authentication middleware (temporarily disabled for testing)
+  // Authentication middleware
   server.addHook('preHandler', async (request, reply) => {
     // Skip auth for health check and public endpoints
-    if (request.url === '/healthz' || request.url === '/') {
+    if (request.url === '/healthz' || request.url === '/' || request.url === '/auth/demo-token') {
       return;
     }
 
-    // For testing, create a mock user context
-    request.user = {
-      userId: 'test-user-1',
-      username: 'test-user',
-      email: 'test@taskhub.local',
-      roles: ['developer'],
-      permissions: ['tasks:read', 'tasks:write', 'github:read', 'github:write'],
-    };
+    const authHeader = request.headers.authorization;
+    const token = extractTokenFromHeader(authHeader);
+
+    if (!token) {
+      throw new AuthenticationError('Missing authorization token', 'MISSING_TOKEN');
+    }
+
+    try {
+      const user = verifyToken(token);
+      request.user = user;
+
+      logger.debug('User authenticated', {
+        userId: user.userId,
+        username: user.username,
+        requestId: request.id,
+      });
+    } catch (error) {
+      if (error instanceof AuthenticationError) {
+        throw error;
+      }
+      throw new AuthenticationError('Invalid token', 'INVALID_TOKEN');
+    }
   });
 
   // Idempotency middleware
@@ -137,8 +152,8 @@ async function registerMiddleware(server: FastifyInstance): Promise<void> {
       return;
     }
 
-    // Skip for health check
-    if (request.url === '/healthz') {
+    // Skip for health check and auth endpoints
+    if (request.url === '/healthz' || request.url === '/auth/demo-token') {
       return;
     }
 
@@ -383,6 +398,24 @@ async function registerRoutes(server: FastifyInstance): Promise<void> {
     };
   });
 
+  // Development token endpoint (no auth required, only in development)
+  if (config.NODE_ENV === 'development') {
+    server.post('/auth/demo-token', async (request, reply) => {
+      const token = generateDemoToken();
+      return {
+        token,
+        type: 'Bearer',
+        expiresIn: `${config.JWT_TTL_MIN}m`,
+        user: {
+          userId: 'demo-user-1',
+          username: 'demo-user',
+          email: 'demo@taskhub.local',
+          roles: ['developer', 'admin'],
+        },
+      };
+    });
+  }
+
   // Root endpoint
   server.get('/', async (request, reply) => {
     return {
@@ -421,7 +454,15 @@ async function registerRoutes(server: FastifyInstance): Promise<void> {
   server.get(`${basePath}/tasks`, async (request, reply) => {
     validatePermissions(request.user!, 'list_tasks');
 
-    const result = await listTasksTool(request.query as any, logger);
+    // Convert query parameters to proper types
+    const query = request.query as any;
+    const processedQuery = {
+      ...query,
+      limit: query.limit ? parseInt(query.limit, 10) : undefined,
+      offset: query.offset ? parseInt(query.offset, 10) : undefined,
+    };
+
+    const result = await listTasksTool(processedQuery, logger);
     return handleToolResult(result, reply);
   });
 

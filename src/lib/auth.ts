@@ -44,6 +44,19 @@ export function generateToken(user: UserContext): string {
 }
 
 /**
+ * Generate a development/demo token for testing
+ */
+export function generateDemoToken(): string {
+  return generateToken({
+    userId: 'demo-user-1',
+    username: 'demo-user',
+    email: 'demo@taskhub.local',
+    roles: ['developer', 'admin'],
+    permissions: ['tasks:read', 'tasks:write', 'github:read', 'github:write'],
+  });
+}
+
+/**
  * Verify and decode a JWT token
  */
 export function verifyToken(token: string): UserContext {
