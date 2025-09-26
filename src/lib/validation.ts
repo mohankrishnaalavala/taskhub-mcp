@@ -37,32 +37,37 @@ export type ListTasksInput = z.infer<typeof ListTasksSchema>;
 
 // claim_task schema
 export const ClaimTaskSchema = z.object({
-  task_id: z.number().int().min(1),
-  assignee: z.string().min(1),
+  task_id: z.number().int().positive().describe('ID of the task to claim'),
+  assignee: z.string().min(1).max(100).describe('Username of the person claiming the task'),
 });
 export type ClaimTaskInput = z.infer<typeof ClaimTaskSchema>;
 
 // start_branch schema
 export const StartBranchSchema = z.object({
-  task_id: z.number().int().min(1),
-  repo: z.string().regex(repoPattern),
-  base: z.string().default('main'),
+  task_id: z.number().int().positive().describe('ID of the task to create a branch for'),
+  repo: z.string().regex(repoPattern).optional().describe('Repository in format owner/repo (optional if task has repo)'),
+  branch_name: z.string().min(1).max(100).optional().describe('Custom branch name (optional, auto-generated if not provided)'),
+  base_branch: z.string().min(1).max(100).optional().describe('Base branch to create from (optional, defaults to main/master)'),
+  dry_run: z.boolean().optional().default(false).describe('If true, simulate the operation without making changes'),
 });
 export type StartBranchInput = z.infer<typeof StartBranchSchema>;
 
 // File schema for push_patch
 export const FileSchema = z.object({
-  path: z.string().regex(filePathPattern),
-  content: z.string(),
-  encoding: z.enum(['utf8', 'base64']).default('utf8'),
+  path: z.string().min(1).max(500).describe('File path relative to repository root'),
+  content: z.string().describe('File content'),
+  encoding: z.enum(['utf-8', 'base64']).optional().default('utf-8').describe('Content encoding'),
 });
 export type FileInput = z.infer<typeof FileSchema>;
 
 // push_patch schema
 export const PushPatchSchema = z.object({
-  task_id: z.number().int().min(1),
-  commit_message: z.string().min(10).max(200),
-  files: z.array(FileSchema).min(1).max(50),
+  task_id: z.number().int().positive().describe('ID of the task to push changes for'),
+  branch_name: z.string().min(1).max(100).describe('Branch name to push changes to'),
+  repo: z.string().regex(repoPattern).optional().describe('Repository in format owner/repo (optional if task has repo)'),
+  files: z.array(FileSchema).min(1).max(50).describe('Array of files to push (1-50 files)'),
+  commit_message: z.string().min(1).max(500).optional().describe('Custom commit message (optional, auto-generated if not provided)'),
+  dry_run: z.boolean().optional().default(false).describe('If true, simulate the operation without making changes'),
 });
 export type PushPatchInput = z.infer<typeof PushPatchSchema>;
 
@@ -218,3 +223,5 @@ export function validatePatchSize(files: FileInput[]): Result<void> {
   
   return success(undefined);
 }
+
+

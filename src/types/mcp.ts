@@ -14,11 +14,13 @@ export interface ToolResult {
 }
 
 // Task-related types
+export type TaskStatus = 'todo' | 'claimed' | 'in_progress' | 'review' | 'done';
+
 export interface TaskData {
   id: number;
   title: string;
   description: string;
-  status: 'todo' | 'claimed' | 'in_progress' | 'review' | 'done';
+  status: TaskStatus;
   assignee?: string;
   repo?: string;
   branch?: string;
@@ -80,25 +82,32 @@ export interface ListTasksResponse {
 export interface ClaimTaskResponse {
   task_id: number;
   title: string;
-  status: string;
-  assignee: string;
+  description: string;
+  status: TaskStatus;
+  assignee: string;  // Required since we're claiming the task
+  repo: string | undefined;
+  acceptance_criteria: string[];
   claimed_at: string;
 }
 
 export interface StartBranchResponse {
   task_id: number;
+  branch_name: string;
   repo: string;
-  branch: string;
-  base: string;
-  created_at: string;
+  base_branch: string;
+  branch_sha: string;
+  status: TaskStatus;
+  dry_run: boolean;
 }
 
 export interface PushPatchResponse {
   task_id: number;
+  branch_name: string;
+  repo: string;
   commit_sha: string;
-  branch: string;
   files_changed: number;
-  committed_at: string;
+  commit_message: string;
+  dry_run: boolean;
 }
 
 export interface OpenPrResponse {

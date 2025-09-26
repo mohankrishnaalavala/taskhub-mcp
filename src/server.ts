@@ -23,6 +23,9 @@ import { ToolResult } from './types/mcp.js';
 // Import tool handlers
 import { submitSpecTool } from './tools/submit-spec.js';
 import { listTasksTool } from './tools/list-tasks.js';
+import { claimTaskTool } from './tools/claim-task.js';
+import { startBranchTool } from './tools/start-branch.js';
+import { pushPatchTool } from './tools/push-patch.js';
 
 const serverLogger = createChildLogger({ component: 'mcp-server' });
 
@@ -118,6 +121,126 @@ async function createServer(): Promise<Server> {
             },
           },
         },
+        {
+          name: 'claim_task',
+          description: 'Assign a task to a user and update status to claimed',
+          inputSchema: {
+            type: 'object',
+            required: ['task_id', 'assignee'],
+            properties: {
+              task_id: {
+                type: 'number',
+                description: 'ID of the task to claim',
+              },
+              assignee: {
+                type: 'string',
+                minLength: 1,
+                maxLength: 100,
+                description: 'Username of the person claiming the task',
+              },
+            },
+          },
+        },
+        {
+          name: 'start_branch',
+          description: 'Create a new Git branch for task work',
+          inputSchema: {
+            type: 'object',
+            required: ['task_id'],
+            properties: {
+              task_id: {
+                type: 'number',
+                description: 'ID of the task to create a branch for',
+              },
+              repo: {
+                type: 'string',
+                pattern: '^[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+$',
+                description: 'Repository in format owner/repo (optional if task has repo)',
+              },
+              branch_name: {
+                type: 'string',
+                minLength: 1,
+                maxLength: 100,
+                description: 'Custom branch name (optional, auto-generated if not provided)',
+              },
+              base_branch: {
+                type: 'string',
+                minLength: 1,
+                maxLength: 100,
+                description: 'Base branch to create from (optional, defaults to main/master)',
+              },
+              dry_run: {
+                type: 'boolean',
+                default: false,
+                description: 'If true, simulate the operation without making changes',
+              },
+            },
+          },
+        },
+        {
+          name: 'push_patch',
+          description: 'Upload code changes to the task branch',
+          inputSchema: {
+            type: 'object',
+            required: ['task_id', 'branch_name', 'files'],
+            properties: {
+              task_id: {
+                type: 'number',
+                description: 'ID of the task to push changes for',
+              },
+              branch_name: {
+                type: 'string',
+                minLength: 1,
+                maxLength: 100,
+                description: 'Branch name to push changes to',
+              },
+              repo: {
+                type: 'string',
+                pattern: '^[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+$',
+                description: 'Repository in format owner/repo (optional if task has repo)',
+              },
+              files: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  required: ['path', 'content'],
+                  properties: {
+                    path: {
+                      type: 'string',
+                      minLength: 1,
+                      maxLength: 500,
+                      description: 'File path relative to repository root',
+                    },
+                    content: {
+                      type: 'string',
+                      description: 'File content',
+                    },
+                    encoding: {
+                      type: 'string',
+                      enum: ['utf-8', 'base64'],
+                      default: 'utf-8',
+                      description: 'Content encoding',
+                    },
+                  },
+                },
+                minItems: 1,
+                maxItems: 50,
+                description: 'Array of files to push (1-50 files)',
+              },
+              commit_message: {
+                type: 'string',
+                minLength: 1,
+                maxLength: 500,
+                description: 'Custom commit message (optional, auto-generated if not provided)',
+              },
+              dry_run: {
+                type: 'boolean',
+                default: false,
+                description: 'If true, simulate the operation without making changes',
+              },
+            },
+          },
+        },
       ],
     };
   });
@@ -144,6 +267,18 @@ async function createServer(): Promise<Server> {
 
         case 'list_tasks':
           result = await listTasksTool(args, toolLogger);
+          break;
+
+        case 'claim_task':
+          result = await claimTaskTool(args, toolLogger);
+          break;
+
+        case 'start_branch':
+          result = await startBranchTool(args, toolLogger);
+          break;
+
+        case 'push_patch':
+          result = await pushPatchTool(args, toolLogger);
           break;
 
         default:
