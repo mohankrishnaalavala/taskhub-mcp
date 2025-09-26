@@ -371,7 +371,7 @@ export async function startHttpServer(): Promise<FastifyInstance> {
 /**
  * Validate that user is authenticated and has required permissions
  */
-function validateUserAndPermissions(user: UserContext | null, operation: string): void {
+function validateUserAndPermissions(user: UserContext | null | undefined, operation: string): void {
   if (!user) {
     throw new Error('User not authenticated');
   }
@@ -464,8 +464,8 @@ async function registerRoutes(server: FastifyInstance): Promise<void> {
     const query = request.query as Record<string, unknown>;
     const processedQuery = {
       ...query,
-      limit: query.limit ? parseInt(query.limit, 10) : undefined,
-      offset: query.offset ? parseInt(query.offset, 10) : undefined,
+      limit: query.limit ? parseInt(String(query.limit), 10) : undefined,
+      offset: query.offset ? parseInt(String(query.offset), 10) : undefined,
     };
 
     const result = await listTasksTool(processedQuery, logger);
