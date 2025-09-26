@@ -27,12 +27,14 @@ export async function initializeDatabase(): Promise<Result<void>> {
     return success(undefined);
   } catch (error) {
     logger.error('Failed to connect to database', { error });
-    return failure(new DatabaseError(
-      'Failed to connect to database',
-      'CONNECTION_FAILED',
-      undefined,
-      error instanceof Error ? error : new Error(String(error))
-    ));
+    return failure(
+      new DatabaseError(
+        'Failed to connect to database',
+        'CONNECTION_FAILED',
+        undefined,
+        error instanceof Error ? error : new Error(String(error))
+      )
+    );
   }
 }
 
@@ -64,19 +66,21 @@ export async function checkDatabaseHealth(): Promise<Result<{ status: string; la
     const start = Date.now();
     await prisma.$queryRaw`SELECT 1`;
     const latency = Date.now() - start;
-    
+
     return success({
       status: 'healthy',
       latency,
     });
   } catch (error) {
     logger.error('Database health check failed', { error });
-    return failure(new DatabaseError(
-      'Database health check failed',
-      'HEALTH_CHECK_FAILED',
-      undefined,
-      error instanceof Error ? error : new Error(String(error))
-    ));
+    return failure(
+      new DatabaseError(
+        'Database health check failed',
+        'HEALTH_CHECK_FAILED',
+        undefined,
+        error instanceof Error ? error : new Error(String(error))
+      )
+    );
   }
 }
 
@@ -89,40 +93,42 @@ export async function withRetry<T>(
   delayMs: number = 500
 ): Promise<Result<T>> {
   let lastError: Error | undefined;
-  
+
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       const result = await operation();
       return success(result);
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
-      
+
       if (attempt === maxRetries) {
         break;
       }
-      
+
       logger.warn(`Database operation failed, retrying (${attempt}/${maxRetries})`, {
         error: lastError.message,
         attempt,
         delayMs,
       });
-      
+
       await new Promise(resolve => setTimeout(resolve, delayMs));
       delayMs *= 2; // Exponential backoff
     }
   }
-  
+
   logger.error('Database operation failed after all retries', {
     error: lastError,
     maxRetries,
   });
-  
-  return failure(new DatabaseError(
-    `Database operation failed after ${maxRetries} attempts`,
-    'OPERATION_FAILED',
-    { maxRetries },
-    lastError
-  ));
+
+  return failure(
+    new DatabaseError(
+      `Database operation failed after ${maxRetries} attempts`,
+      'OPERATION_FAILED',
+      { maxRetries },
+      lastError
+    )
+  );
 }
 
 // Export the Prisma client

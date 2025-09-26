@@ -8,29 +8,29 @@ dotenv.config();
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.coerce.number().default(3000),
-  
+
   // Database
   DATABASE_URL: z.string().default('file:./dev.db'),
-  
+
   // GitHub
   GITHUB_TOKEN: z.string().min(1, 'GitHub token is required'),
   ALLOWED_REPOS: z.string().min(1, 'At least one allowed repo is required'),
-  
+
   // Authentication
   BEARER_TOKEN: z.string().min(1, 'Bearer token is required'),
-  
+
   // Safety & Limits
   DRY_RUN: z.coerce.boolean().default(true),
   MAX_FILE_SIZE_MB: z.coerce.number().default(1),
   MAX_PATCH_SIZE_MB: z.coerce.number().default(10),
-  
+
   // Logging
   LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
-  
+
   // Retry Configuration
   RETRY_ATTEMPTS: z.coerce.number().default(3),
   RETRY_DELAY_MS: z.coerce.number().default(1000),
-  
+
   // Health Check
   HEALTH_CHECK_ENABLED: z.coerce.boolean().default(true),
 
@@ -51,8 +51,17 @@ const envSchema = z.object({
 const result = envSchema.safeParse(process.env);
 
 if (!result.success) {
-  console.error('❌ Invalid environment configuration:');
+  const errorMessage = '❌ Invalid environment configuration:';
+  // eslint-disable-next-line no-console
+  console.error(errorMessage);
+  // eslint-disable-next-line no-console
   console.error(result.error.format());
+
+  // In test environment, throw error instead of process.exit
+  if (process.env.NODE_ENV === 'test') {
+    throw new Error(`${errorMessage}\n${JSON.stringify(result.error.format(), null, 2)}`);
+  }
+
   process.exit(1);
 }
 

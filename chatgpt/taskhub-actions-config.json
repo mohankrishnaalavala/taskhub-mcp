@@ -1,0 +1,117 @@
+{
+  "schema_version": "v1",
+  "name_for_human": "TaskHub MCP",
+  "name_for_model": "taskhub_mcp",
+  "description_for_human": "Task management and GitHub workflow automation for rapid product development",
+  "description_for_model": "TaskHub MCP enables complete task-to-PR workflows: create tasks, claim them, create branches, push code, open PRs, and post reviews. Supports JWT authentication and idempotency.",
+  "auth": {
+    "type": "bearer",
+    "instructions": "Get a demo token by calling POST /auth/demo-token first, then use the returned token for all subsequent requests."
+  },
+  "api": {
+    "type": "openapi",
+    "url": "http://localhost:3000",
+    "has_user_authentication": true
+  },
+  "logo_url": "https://example.com/taskhub-logo.png",
+  "contact_email": "support@taskhub.local",
+  "legal_info_url": "https://example.com/legal",
+  "privacy_policy_url": "https://example.com/privacy",
+  "instructions": {
+    "general": "TaskHub MCP automates the complete software development workflow from task creation to pull request management. Always authenticate first by getting a demo token.",
+    "authentication": "1. Call POST /auth/demo-token to get a JWT token\n2. Use the token in Authorization header: 'Bearer <token>'\n3. Tokens expire in 30 minutes",
+    "workflow": "Typical workflow:\n1. Create task with POST /mcp/tasks\n2. Claim task with POST /mcp/tasks/{id}/claim\n3. Create branch with POST /mcp/tasks/{id}/branch\n4. Push code with POST /mcp/tasks/{id}/patch\n5. Open PR with POST /mcp/tasks/{id}/pr\n6. Review with POST /mcp/tasks/{id}/review",
+    "best_practices": [
+      "Always include meaningful acceptance criteria when creating tasks",
+      "Use descriptive commit messages that follow conventional commits",
+      "Include proper file paths and well-structured code in patches",
+      "Write helpful PR descriptions with checklists",
+      "Provide constructive code review feedback"
+    ],
+    "error_handling": "If you get authentication errors, get a new token. For validation errors, check the request format. For GitHub errors, verify repository access."
+  },
+  "capabilities": [
+    "Create and manage development tasks",
+    "Claim tasks for specific developers", 
+    "Create GitHub feature branches",
+    "Push code changes to branches",
+    "Open pull requests with auto-generated checklists",
+    "Post code reviews with approval/comments/change requests",
+    "List and filter tasks by status, assignee, or repository",
+    "Support for multiple repositories and developers"
+  ],
+  "examples": [
+    {
+      "name": "Create a new task",
+      "description": "Create a task for implementing user authentication",
+      "request": {
+        "method": "POST",
+        "url": "/mcp/tasks",
+        "headers": {
+          "Authorization": "Bearer <token>",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "title": "Implement user authentication",
+          "description": "Add JWT-based authentication with login/logout functionality",
+          "repo": "myorg/webapp",
+          "acceptance_criteria": [
+            "Login form works",
+            "JWT tokens generated",
+            "Protected routes work",
+            "Logout clears session"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Complete development workflow",
+      "description": "Full workflow from task creation to PR review",
+      "steps": [
+        "1. Create task",
+        "2. Claim task for developer",
+        "3. Create feature branch", 
+        "4. Push implementation code",
+        "5. Open pull request",
+        "6. Post approval review"
+      ]
+    },
+    {
+      "name": "List tasks by status",
+      "description": "Get all tasks that are ready for review",
+      "request": {
+        "method": "GET",
+        "url": "/mcp/tasks?status=review&limit=10",
+        "headers": {
+          "Authorization": "Bearer <token>"
+        }
+      }
+    }
+  ],
+  "rate_limits": {
+    "requests_per_minute": 100,
+    "note": "Rate limiting is enforced per IP address"
+  },
+  "supported_features": {
+    "idempotency": {
+      "enabled": true,
+      "header": "Idempotency-Key",
+      "description": "Include Idempotency-Key header for write operations to prevent duplicates"
+    },
+    "pagination": {
+      "enabled": true,
+      "parameters": ["limit", "offset"],
+      "max_limit": 100
+    },
+    "filtering": {
+      "enabled": true,
+      "supported_fields": ["status", "assignee", "repo"]
+    }
+  },
+  "development": {
+    "demo_mode": true,
+    "demo_token_endpoint": "/auth/demo-token",
+    "test_repository": "test-org/test-repo",
+    "dry_run_mode": "Set DRY_RUN=true environment variable to simulate GitHub operations without actual API calls"
+  }
+}

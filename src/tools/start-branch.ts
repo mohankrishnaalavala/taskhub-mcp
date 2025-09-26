@@ -1,6 +1,6 @@
 /**
  * start_branch MCP Tool
- * 
+ *
  * Creates a new Git branch for task work based on task requirements
  */
 
@@ -9,7 +9,14 @@ import { validateInput, StartBranchSchema, StartBranchInput } from '../lib/valid
 import { withRetry, prisma } from '../lib/database.js';
 import { getGitHubClient } from '../lib/github.js';
 import { ToolResult, StartBranchResponse } from '../types/mcp.js';
-import { success, failure, isFailure, NotFoundError, ConflictError, ValidationError } from '../types/errors.js';
+import {
+  success,
+  failure,
+  isFailure,
+  NotFoundError,
+  ConflictError,
+  ValidationError,
+} from '../types/errors.js';
 import { validateActionForStateWithDetails } from '../lib/state-machine.js';
 
 /**
@@ -41,11 +48,11 @@ export async function startBranchTool(args: unknown, logger: Logger): Promise<To
   // Validate input
   const validationResult = validateInput(StartBranchSchema, args);
   if (isFailure(validationResult)) {
-    logger.warn('start_branch validation failed', { 
+    logger.warn('start_branch validation failed', {
       error: validationResult.error,
-      args 
+      args,
     });
-    
+
     return {
       content: [
         {
@@ -66,7 +73,7 @@ export async function startBranchTool(args: unknown, logger: Logger): Promise<To
 
   const input = validationResult.data;
   const requestId = Math.random().toString(36).substring(2, 8);
-  
+
   logger.info('Processing start_branch request', {
     requestId,
     taskId: input.task_id,
@@ -120,11 +127,9 @@ export async function startBranchTool(args: unknown, logger: Logger): Promise<To
       });
 
       if (!task) {
-        throw new NotFoundError(
-          `Task with ID ${input.task_id} not found`,
-          'TASK_NOT_FOUND',
-          { taskId: input.task_id }
-        );
+        throw new NotFoundError(`Task with ID ${input.task_id} not found`, 'TASK_NOT_FOUND', {
+          taskId: input.task_id,
+        });
       }
 
       // Validate state machine transition (Phase 4.5)

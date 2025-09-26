@@ -1,6 +1,6 @@
 /**
  * list_tasks MCP Tool
- * 
+ *
  * Lists tasks with optional filtering
  */
 
@@ -19,7 +19,7 @@ export async function listTasksTool(args: unknown, logger: Logger): Promise<Tool
   // Validate input
   const validationResult = validateInput(ListTasksSchema, args);
   if (isFailure(validationResult)) {
-    logger.warn('Input validation failed', { 
+    logger.warn('Input validation failed', {
       error: validationResult.error,
       args,
     });
@@ -43,7 +43,7 @@ export async function listTasksTool(args: unknown, logger: Logger): Promise<Tool
   }
 
   const input = validationResult.data;
-  logger.info('Listing tasks', { 
+  logger.info('Listing tasks', {
     status: input.status,
     assignee: input.assignee,
     repo: input.repo,
@@ -74,7 +74,7 @@ export async function listTasksTool(args: unknown, logger: Logger): Promise<Tool
   });
 
   if (isFailure(tasksResult)) {
-    logger.error('Failed to fetch tasks', { 
+    logger.error('Failed to fetch tasks', {
       error: tasksResult.error,
       input,
     });
@@ -103,7 +103,7 @@ export async function listTasksTool(args: unknown, logger: Logger): Promise<Tool
   });
 
   if (isFailure(countResult)) {
-    logger.error('Failed to count tasks', { 
+    logger.error('Failed to count tasks', {
       error: countResult.error,
       input,
     });

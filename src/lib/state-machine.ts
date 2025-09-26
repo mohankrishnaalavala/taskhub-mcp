@@ -1,6 +1,6 @@
 /**
  * Task State Machine
- * 
+ *
  * Enforces strict state transitions as specified in Phase 4.5:
  * todo → claimed → in_progress → review → done
  */
@@ -51,7 +51,7 @@ export function validateStateTransition(
 ): { valid: boolean; error?: ConflictError } {
   // Check if the transition is valid
   const allowedTransitions = VALID_TRANSITIONS[currentState];
-  
+
   if (!allowedTransitions.includes(newState)) {
     return {
       valid: false,
@@ -80,7 +80,7 @@ export function validateActionForState(
   taskId: number
 ): { valid: boolean; error?: ConflictError } {
   const requiredStates = ACTION_REQUIREMENTS[action];
-  
+
   if (!requiredStates) {
     // Action not in our state machine - allow it
     return { valid: true };
@@ -156,7 +156,7 @@ export function validateStateTransitionWithDetails(
   taskId?: number
 ): void {
   const validation = validateStateTransition(currentState, newState, action);
-  
+
   if (!validation.valid && validation.error) {
     // Enhance error message with state machine description
     const enhancedError = new ConflictError(
@@ -167,7 +167,7 @@ export function validateStateTransitionWithDetails(
         stateMachineRules: getStateMachineDescription(),
       }
     );
-    
+
     throw enhancedError;
   }
 }
@@ -181,7 +181,7 @@ export function validateActionForStateWithDetails(
   taskId: number
 ): void {
   const validation = validateActionForState(action, currentState, taskId);
-  
+
   if (!validation.valid && validation.error) {
     // Enhance error message with state machine description
     const enhancedError = new ConflictError(
@@ -192,7 +192,7 @@ export function validateActionForStateWithDetails(
         stateMachineRules: getStateMachineDescription(),
       }
     );
-    
+
     throw enhancedError;
   }
 }

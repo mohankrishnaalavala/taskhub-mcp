@@ -1,6 +1,6 @@
 /**
  * GitHub API Client
- * 
+ *
  * Provides authenticated GitHub API access with retry logic, rate limiting,
  * and repository allowlist validation.
  */
@@ -9,13 +9,13 @@ import { Octokit } from 'octokit';
 import { Logger } from 'pino';
 import { config, derivedConfig } from '../config/env.js';
 import { createChildLogger } from './logger.js';
-import { 
-  Result, 
-  success, 
-  failure, 
-  GitHubApiError, 
-  AuthError, 
-  ValidationError 
+import {
+  Result,
+  success,
+  failure,
+  GitHubApiError,
+  AuthError,
+  ValidationError,
 } from '../types/errors.js';
 
 // GitHub API types
@@ -101,7 +101,7 @@ export class GitHubClient {
 
   constructor(token: string) {
     this.logger = createChildLogger({ component: 'github-client' });
-    
+
     this.octokit = new Octokit({
       auth: token,
       retry: {
@@ -133,15 +133,17 @@ export class GitHubClient {
    */
   private validateRepo(repo: GitHubRepo): Result<void> {
     const repoString = `${repo.owner}/${repo.repo}`;
-    
+
     if (!derivedConfig.allowedRepos.includes(repoString)) {
-      return failure(new ValidationError(
-        `Repository '${repoString}' is not in the allowed list`,
-        'REPO_NOT_ALLOWED',
-        { repo: repoString, allowedRepos: derivedConfig.allowedRepos }
-      ));
+      return failure(
+        new ValidationError(
+          `Repository '${repoString}' is not in the allowed list`,
+          'REPO_NOT_ALLOWED',
+          { repo: repoString, allowedRepos: derivedConfig.allowedRepos }
+        )
+      );
     }
-    
+
     return success(undefined);
   }
 
@@ -151,59 +153,67 @@ export class GitHubClient {
   async testAuthentication(): Promise<Result<{ user: string; scopes: string[] }>> {
     try {
       this.logger.debug('Testing GitHub authentication');
-      
+
       const { data: user } = await this.octokit.rest.users.getAuthenticated();
-      
+
       // Get token scopes from response headers (if available)
       const scopes: string[] = [];
-      
+
       this.logger.info('GitHub authentication successful', {
         user: user.login,
         scopes,
       });
-      
+
       return success({
         user: user.login,
         scopes,
       });
     } catch (error) {
       this.logger.error('GitHub authentication failed', { error });
-      
+
       if (error instanceof Error) {
         const statusCode = (error as any).status;
-        
+
         if (statusCode === 401) {
-          return failure(new AuthError(
-            'GitHub authentication failed - invalid token',
-            'GITHUB_AUTH_FAILED',
-            { statusCode },
-            error
-          ));
+          return failure(
+            new AuthError(
+              'GitHub authentication failed - invalid token',
+              'GITHUB_AUTH_FAILED',
+              { statusCode },
+              error
+            )
+          );
         }
-        
-        return failure(new GitHubApiError(
-          `GitHub API error: ${error.message}`,
-          'GITHUB_API_ERROR',
-          { statusCode },
-          undefined,
-          error
-        ));
+
+        return failure(
+          new GitHubApiError(
+            `GitHub API error: ${error.message}`,
+            'GITHUB_API_ERROR',
+            { statusCode },
+            undefined,
+            error
+          )
+        );
       }
-      
-      return failure(new GitHubApiError(
-        'Unknown GitHub API error',
-        'GITHUB_API_ERROR',
-        {},
-        undefined,
-        error instanceof Error ? error : new Error(String(error))
-      ));
+
+      return failure(
+        new GitHubApiError(
+          'Unknown GitHub API error',
+          'GITHUB_API_ERROR',
+          {},
+          undefined,
+          error instanceof Error ? error : new Error(String(error))
+        )
+      );
     }
   }
 
   /**
    * Get repository information
    */
-  async getRepository(repo: GitHubRepo): Promise<Result<{ defaultBranch: string; private: boolean }>> {
+  async getRepository(
+    repo: GitHubRepo
+  ): Promise<Result<{ defaultBranch: string; private: boolean }>> {
     const repoValidation = this.validateRepo(repo);
     if (!repoValidation.success) {
       return repoValidation;
@@ -211,47 +221,53 @@ export class GitHubClient {
 
     try {
       this.logger.debug('Getting repository information', { repo });
-      
+
       const { data } = await this.octokit.rest.repos.get({
         owner: repo.owner,
         repo: repo.repo,
       });
-      
+
       return success({
         defaultBranch: data.default_branch,
         private: data.private,
       });
     } catch (error) {
       this.logger.error('Failed to get repository information', { repo, error });
-      
+
       if (error instanceof Error) {
         const statusCode = (error as any).status;
-        
+
         if (statusCode === 404) {
-          return failure(new ValidationError(
-            `Repository '${repo.owner}/${repo.repo}' not found or not accessible`,
-            'REPO_NOT_FOUND',
-            { repo },
-            error
-          ));
+          return failure(
+            new ValidationError(
+              `Repository '${repo.owner}/${repo.repo}' not found or not accessible`,
+              'REPO_NOT_FOUND',
+              { repo },
+              error
+            )
+          );
         }
-        
-        return failure(new GitHubApiError(
-          `Failed to get repository: ${error.message}`,
-          'GITHUB_API_ERROR',
-          { repo, statusCode },
-          undefined,
-          error
-        ));
+
+        return failure(
+          new GitHubApiError(
+            `Failed to get repository: ${error.message}`,
+            'GITHUB_API_ERROR',
+            { repo, statusCode },
+            undefined,
+            error
+          )
+        );
       }
-      
-      return failure(new GitHubApiError(
-        'Unknown error getting repository',
-        'GITHUB_API_ERROR',
-        { repo },
-        undefined,
-        error instanceof Error ? error : new Error(String(error))
-      ));
+
+      return failure(
+        new GitHubApiError(
+          'Unknown error getting repository',
+          'GITHUB_API_ERROR',
+          { repo },
+          undefined,
+          error instanceof Error ? error : new Error(String(error))
+        )
+      );
     }
   }
 
@@ -275,7 +291,7 @@ export class GitHubClient {
 
     try {
       this.logger.debug('Creating branch', { options });
-      
+
       // Get the source branch SHA
       const fromBranch = options.fromBranch || 'main';
       const { data: refData } = await this.octokit.rest.git.getRef({
@@ -283,7 +299,7 @@ export class GitHubClient {
         repo: options.repo.repo,
         ref: `heads/${fromBranch}`,
       });
-      
+
       // Create the new branch
       const { data: newRef } = await this.octokit.rest.git.createRef({
         owner: options.repo.owner,
@@ -291,13 +307,13 @@ export class GitHubClient {
         ref: `refs/heads/${options.branchName}`,
         sha: refData.object.sha,
       });
-      
+
       this.logger.info('Branch created successfully', {
         repo: options.repo,
         branch: options.branchName,
         sha: newRef.object.sha,
       });
-      
+
       return success({
         name: options.branchName,
         sha: newRef.object.sha,
@@ -305,42 +321,50 @@ export class GitHubClient {
       });
     } catch (error) {
       this.logger.error('Failed to create branch', { options, error });
-      
+
       if (error instanceof Error) {
         const statusCode = (error as any).status;
-        
+
         if (statusCode === 422) {
-          return failure(new ValidationError(
-            `Branch '${options.branchName}' already exists`,
-            'BRANCH_EXISTS',
-            { branchName: options.branchName },
-            error
-          ));
+          return failure(
+            new ValidationError(
+              `Branch '${options.branchName}' already exists`,
+              'BRANCH_EXISTS',
+              { branchName: options.branchName },
+              error
+            )
+          );
         }
-        
-        return failure(new GitHubApiError(
-          `Failed to create branch: ${error.message}`,
-          'GITHUB_API_ERROR',
-          { options, statusCode },
-          undefined,
-          error
-        ));
+
+        return failure(
+          new GitHubApiError(
+            `Failed to create branch: ${error.message}`,
+            'GITHUB_API_ERROR',
+            { options, statusCode },
+            undefined,
+            error
+          )
+        );
       }
-      
-      return failure(new GitHubApiError(
-        'Unknown error creating branch',
-        'GITHUB_API_ERROR',
-        { options },
-        undefined,
-        error instanceof Error ? error : new Error(String(error))
-      ));
+
+      return failure(
+        new GitHubApiError(
+          'Unknown error creating branch',
+          'GITHUB_API_ERROR',
+          { options },
+          undefined,
+          error instanceof Error ? error : new Error(String(error))
+        )
+      );
     }
   }
 
   /**
    * Push files to a branch
    */
-  async pushFiles(options: PushFilesOptions): Promise<Result<{ commitSha: string; filesChanged: number }>> {
+  async pushFiles(
+    options: PushFilesOptions
+  ): Promise<Result<{ commitSha: string; filesChanged: number }>> {
     const repoValidation = this.validateRepo(options.repo);
     if (!repoValidation.success) {
       return repoValidation;
@@ -384,11 +408,14 @@ export class GitHubClient {
 
       // Create blobs for all files
       const treeItems = await Promise.all(
-        options.files.map(async (file) => {
+        options.files.map(async file => {
           const { data: blob } = await this.octokit.rest.git.createBlob({
             owner: options.repo.owner,
             repo: options.repo.repo,
-            content: file.encoding === 'base64' ? file.content : Buffer.from(file.content, 'utf-8').toString('base64'),
+            content:
+              file.encoding === 'base64'
+                ? file.content
+                : Buffer.from(file.content, 'utf-8').toString('base64'),
             encoding: 'base64',
           });
 
@@ -444,30 +471,36 @@ export class GitHubClient {
         const statusCode = (error as any).status;
 
         if (statusCode === 404) {
-          return failure(new ValidationError(
-            `Branch '${options.branch}' not found`,
-            'BRANCH_NOT_FOUND',
-            { branch: options.branch },
-            error
-          ));
+          return failure(
+            new ValidationError(
+              `Branch '${options.branch}' not found`,
+              'BRANCH_NOT_FOUND',
+              { branch: options.branch },
+              error
+            )
+          );
         }
 
-        return failure(new GitHubApiError(
-          `Failed to push files: ${error.message}`,
-          'GITHUB_API_ERROR',
-          { options, statusCode },
-          undefined,
-          error
-        ));
+        return failure(
+          new GitHubApiError(
+            `Failed to push files: ${error.message}`,
+            'GITHUB_API_ERROR',
+            { options, statusCode },
+            undefined,
+            error
+          )
+        );
       }
 
-      return failure(new GitHubApiError(
-        'Unknown error pushing files',
-        'GITHUB_API_ERROR',
-        { options },
-        undefined,
-        error instanceof Error ? error : new Error(String(error))
-      ));
+      return failure(
+        new GitHubApiError(
+          'Unknown error pushing files',
+          'GITHUB_API_ERROR',
+          { options },
+          undefined,
+          error instanceof Error ? error : new Error(String(error))
+        )
+      );
     }
   }
 
@@ -549,30 +582,36 @@ export class GitHubClient {
         const statusCode = (error as any).status;
 
         if (statusCode === 422) {
-          return failure(new ValidationError(
-            'Pull request creation failed - check if branch exists and has commits',
-            'PR_CREATION_FAILED',
-            { head: options.head, base: options.base },
-            error
-          ));
+          return failure(
+            new ValidationError(
+              'Pull request creation failed - check if branch exists and has commits',
+              'PR_CREATION_FAILED',
+              { head: options.head, base: options.base },
+              error
+            )
+          );
         }
 
-        return failure(new GitHubApiError(
-          `Failed to create pull request: ${error.message}`,
-          'GITHUB_API_ERROR',
-          { options, statusCode },
-          undefined,
-          error
-        ));
+        return failure(
+          new GitHubApiError(
+            `Failed to create pull request: ${error.message}`,
+            'GITHUB_API_ERROR',
+            { options, statusCode },
+            undefined,
+            error
+          )
+        );
       }
 
-      return failure(new GitHubApiError(
-        'Unknown error creating pull request',
-        'GITHUB_API_ERROR',
-        { options },
-        undefined,
-        error instanceof Error ? error : new Error(String(error))
-      ));
+      return failure(
+        new GitHubApiError(
+          'Unknown error creating pull request',
+          'GITHUB_API_ERROR',
+          { options },
+          undefined,
+          error instanceof Error ? error : new Error(String(error))
+        )
+      );
     }
   }
 
@@ -626,39 +665,47 @@ export class GitHubClient {
         const statusCode = (error as any).status;
 
         if (statusCode === 404) {
-          return failure(new ValidationError(
-            `Pull request #${options.pullNumber} not found`,
-            'PR_NOT_FOUND',
-            { pullNumber: options.pullNumber },
-            error
-          ));
+          return failure(
+            new ValidationError(
+              `Pull request #${options.pullNumber} not found`,
+              'PR_NOT_FOUND',
+              { pullNumber: options.pullNumber },
+              error
+            )
+          );
         }
 
         if (statusCode === 422) {
-          return failure(new ValidationError(
-            'Review creation failed - check if PR is in a reviewable state',
-            'REVIEW_CREATION_FAILED',
-            { pullNumber: options.pullNumber, event: options.event },
-            error
-          ));
+          return failure(
+            new ValidationError(
+              'Review creation failed - check if PR is in a reviewable state',
+              'REVIEW_CREATION_FAILED',
+              { pullNumber: options.pullNumber, event: options.event },
+              error
+            )
+          );
         }
 
-        return failure(new GitHubApiError(
-          `Failed to create review: ${error.message}`,
-          'GITHUB_API_ERROR',
-          { options, statusCode },
-          undefined,
-          error
-        ));
+        return failure(
+          new GitHubApiError(
+            `Failed to create review: ${error.message}`,
+            'GITHUB_API_ERROR',
+            { options, statusCode },
+            undefined,
+            error
+          )
+        );
       }
 
-      return failure(new GitHubApiError(
-        'Unknown error creating review',
-        'GITHUB_API_ERROR',
-        { options },
-        undefined,
-        error instanceof Error ? error : new Error(String(error))
-      ));
+      return failure(
+        new GitHubApiError(
+          'Unknown error creating review',
+          'GITHUB_API_ERROR',
+          { options },
+          undefined,
+          error instanceof Error ? error : new Error(String(error))
+        )
+      );
     }
   }
 }
@@ -671,11 +718,11 @@ let githubClient: GitHubClient | null = null;
  */
 export function getGitHubClient(): Result<GitHubClient> {
   if (!config.GITHUB_TOKEN) {
-    return failure(new AuthError(
-      'GitHub token not configured',
-      'GITHUB_TOKEN_MISSING',
-      { envVar: 'GITHUB_TOKEN' }
-    ));
+    return failure(
+      new AuthError('GitHub token not configured', 'GITHUB_TOKEN_MISSING', {
+        envVar: 'GITHUB_TOKEN',
+      })
+    );
   }
 
   if (!githubClient) {

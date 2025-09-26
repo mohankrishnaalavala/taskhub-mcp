@@ -260,7 +260,7 @@ describe('Validation Schemas', () => {
       
       if (!result.success) {
         expect(result.error.type).toBe('validation');
-        expect(result.error.code).toBe('VALIDATION_ERROR');
+        expect(result.error.code).toBe('VALIDATION_FAILED');
         expect(result.error.details).toBeDefined();
       }
     });

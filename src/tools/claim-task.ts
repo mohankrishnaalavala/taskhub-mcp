@@ -1,6 +1,6 @@
 /**
  * claim_task MCP Tool
- * 
+ *
  * Assigns a task to a user and updates the task status to 'claimed'
  */
 
@@ -20,11 +20,11 @@ export async function claimTaskTool(args: unknown, logger: Logger): Promise<Tool
   // Validate input
   const validationResult = validateInput(ClaimTaskSchema, args);
   if (isFailure(validationResult)) {
-    logger.warn('claim_task validation failed', { 
+    logger.warn('claim_task validation failed', {
       error: validationResult.error,
-      args 
+      args,
     });
-    
+
     return {
       content: [
         {
@@ -45,7 +45,7 @@ export async function claimTaskTool(args: unknown, logger: Logger): Promise<Tool
 
   const input = validationResult.data;
   const requestId = Math.random().toString(36).substring(2, 8);
-  
+
   logger.info('Processing claim_task request', {
     requestId,
     taskId: input.task_id,
@@ -68,11 +68,9 @@ export async function claimTaskTool(args: unknown, logger: Logger): Promise<Tool
       });
 
       if (!existingTask) {
-        throw new NotFoundError(
-          `Task with ID ${input.task_id} not found`,
-          'TASK_NOT_FOUND',
-          { taskId: input.task_id }
-        );
+        throw new NotFoundError(`Task with ID ${input.task_id} not found`, 'TASK_NOT_FOUND', {
+          taskId: input.task_id,
+        });
       }
 
       // Check if task is already claimed
@@ -80,7 +78,7 @@ export async function claimTaskTool(args: unknown, logger: Logger): Promise<Tool
         throw new ConflictError(
           `Task ${input.task_id} is already claimed by ${existingTask.assignee}`,
           'TASK_ALREADY_CLAIMED',
-          { 
+          {
             taskId: input.task_id,
             currentAssignee: existingTask.assignee,
             currentStatus: existingTask.status,
@@ -156,13 +154,13 @@ export async function claimTaskTool(args: unknown, logger: Logger): Promise<Tool
     }
 
     const task = claimResult.data;
-    
+
     // Parse acceptance criteria from JSON string
     let acceptanceCriteria: string[] = [];
     try {
       acceptanceCriteria = JSON.parse(task.acceptanceCriteria || '[]');
     } catch (error) {
-      logger.warn('Failed to parse acceptance criteria', { 
+      logger.warn('Failed to parse acceptance criteria', {
         taskId: task.id,
         acceptanceCriteria: task.acceptanceCriteria,
       });
@@ -173,7 +171,7 @@ export async function claimTaskTool(args: unknown, logger: Logger): Promise<Tool
       title: task.title,
       description: task.description,
       status: task.status as any,
-      assignee: task.assignee!,  // We know it's not null since we just set it
+      assignee: task.assignee!, // We know it's not null since we just set it
       repo: task.repo ?? undefined,
       acceptance_criteria: acceptanceCriteria,
       claimed_at: task.updatedAt.toISOString(),

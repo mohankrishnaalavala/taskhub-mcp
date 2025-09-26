@@ -1,10 +1,10 @@
 /**
  * HTTP server implementation for TaskHub MCP (Phase 2.5)
- * 
+ *
  * Provides HTTP transport alongside stdio transport for ChatGPT integration.
  */
 
-import Fastify, { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import Fastify, { FastifyInstance, FastifyReply } from 'fastify';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
@@ -16,14 +16,14 @@ import {
   generateDemoToken,
   AuthenticationError,
   AuthorizationError,
-  UserContext
+  UserContext,
 } from '../lib/auth.js';
 import {
   checkIdempotencyKey,
   storeIdempotencyResponse,
   validateIdempotencyKey,
   IdempotencyConflictError,
-  IdempotencyRequest
+  IdempotencyRequest,
 } from '../lib/idempotency.js';
 import { submitSpecTool } from '../tools/submit-spec.js';
 import { listTasksTool } from '../tools/list-tasks.js';
@@ -54,16 +54,16 @@ export async function createHttpServer(): Promise<FastifyInstance> {
 
   // Register plugins
   await registerPlugins(server);
-  
+
   // Register middleware
   await registerMiddleware(server);
-  
+
   // Register routes
   await registerRoutes(server);
-  
+
   // Error handling
   registerErrorHandlers(server);
-  
+
   return server;
 }
 
@@ -76,12 +76,7 @@ async function registerPlugins(server: FastifyInstance): Promise<void> {
     origin: derivedConfig.isDevelopment ? true : false, // Allow all origins in dev
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: [
-      'Content-Type',
-      'Authorization',
-      'X-Request-ID',
-      'Idempotency-Key',
-    ],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-ID', 'Idempotency-Key'],
   });
 
   // Security headers
@@ -104,7 +99,7 @@ async function registerPlugins(server: FastifyInstance): Promise<void> {
  */
 async function registerMiddleware(server: FastifyInstance): Promise<void> {
   // Request logging
-  server.addHook('onRequest', async (request, reply) => {
+  server.addHook('onRequest', async (request, _reply) => {
     logger.info('HTTP request', {
       method: request.method,
       url: request.url,
@@ -115,7 +110,7 @@ async function registerMiddleware(server: FastifyInstance): Promise<void> {
   });
 
   // Authentication middleware
-  server.addHook('preHandler', async (request, reply) => {
+  server.addHook('preHandler', async (request, _reply) => {
     // Skip auth for health check and public endpoints
     if (request.url === '/healthz' || request.url === '/' || request.url === '/auth/demo-token') {
       return;
@@ -158,7 +153,7 @@ async function registerMiddleware(server: FastifyInstance): Promise<void> {
     }
 
     const idempotencyKey = request.headers['idempotency-key'] as string;
-    
+
     // Check if idempotency is required
     if (config.IDEMPOTENCY_REQUIRED && !idempotencyKey) {
       throw new Error('Idempotency-Key header is required for this operation');
@@ -176,13 +171,13 @@ async function registerMiddleware(server: FastifyInstance): Promise<void> {
         key: idempotencyKey,
         method: request.method,
         path: request.url,
-        userId: request.user?.userId || undefined,
+        userId: request.user?.userId ?? undefined,
         body: request.body,
       };
 
       try {
         const existingResponse = await checkIdempotencyKey(idempotencyRequest);
-        
+
         if (existingResponse) {
           // Return stored response
           reply.code(existingResponse.statusCode);
@@ -223,7 +218,7 @@ async function registerMiddleware(server: FastifyInstance): Promise<void> {
         key: request.idempotencyKey,
         method: request.method,
         path: request.url,
-        userId: request.user?.userId || undefined,
+        userId: request.user?.userId ?? undefined,
         body: request.body,
       };
 
@@ -248,7 +243,7 @@ async function registerMiddleware(server: FastifyInstance): Promise<void> {
 function registerErrorHandlers(server: FastifyInstance): void {
   server.setErrorHandler((error, request, reply) => {
     const requestId = request.id;
-    
+
     // Authentication errors
     if (error instanceof AuthenticationError) {
       logger.warn('Authentication error', {
@@ -257,7 +252,7 @@ function registerErrorHandlers(server: FastifyInstance): void {
         requestId,
         url: request.url,
       });
-      
+
       return reply.code(error.statusCode).send({
         error: 'Authentication failed',
         message: error.message,
@@ -275,7 +270,7 @@ function registerErrorHandlers(server: FastifyInstance): void {
         userId: request.user?.userId,
         url: request.url,
       });
-      
+
       return reply.code(error.statusCode).send({
         error: 'Authorization failed',
         message: error.message,
@@ -292,7 +287,7 @@ function registerErrorHandlers(server: FastifyInstance): void {
         requestId,
         url: request.url,
       });
-      
+
       return reply.code(400).send({
         error: 'Validation failed',
         message: error.message,
@@ -348,19 +343,19 @@ function registerErrorHandlers(server: FastifyInstance): void {
  */
 export async function startHttpServer(): Promise<FastifyInstance> {
   const server = await createHttpServer();
-  
+
   try {
     await server.listen({
       port: config.PORT,
       host: '0.0.0.0',
     });
-    
+
     logger.info('HTTP server started', {
       port: config.PORT,
       basePath: config.BASE_PATH,
       environment: config.NODE_ENV,
     });
-    
+
     return server;
   } catch (error) {
     logger.error('Failed to start HTTP server', {
@@ -370,6 +365,16 @@ export async function startHttpServer(): Promise<FastifyInstance> {
     });
     throw error;
   }
+}
+
+/**
+ * Validate that user is authenticated and has required permissions
+ */
+function validateUserAndPermissions(user: any, operation: string): void {
+  if (!user) {
+    throw new Error('User not authenticated');
+  }
+  validatePermissions(user, operation);
 }
 
 /**
@@ -389,7 +394,7 @@ function handleToolResult(result: any, reply: FastifyReply) {
  */
 async function registerRoutes(server: FastifyInstance): Promise<void> {
   // Health check endpoint
-  server.get('/healthz', async (request, reply) => {
+  server.get('/healthz', async (_request, _reply) => {
     return {
       status: 'healthy',
       timestamp: new Date().toISOString(),
@@ -400,7 +405,7 @@ async function registerRoutes(server: FastifyInstance): Promise<void> {
 
   // Development token endpoint (no auth required, only in development)
   if (config.NODE_ENV === 'development') {
-    server.post('/auth/demo-token', async (request, reply) => {
+    server.post('/auth/demo-token', async (_request, _reply) => {
       const token = generateDemoToken();
       return {
         token,
@@ -417,7 +422,7 @@ async function registerRoutes(server: FastifyInstance): Promise<void> {
   }
 
   // Root endpoint
-  server.get('/', async (request, reply) => {
+  server.get('/', async (_request, _reply) => {
     return {
       name: 'TaskHub MCP Server',
       version: '1.0.0',
@@ -444,7 +449,7 @@ async function registerRoutes(server: FastifyInstance): Promise<void> {
 
   // submit_spec -> POST /mcp/tasks
   server.post(`${basePath}/tasks`, async (request, reply) => {
-    validatePermissions(request.user!, 'submit_spec');
+    validateUserAndPermissions(request.user, 'submit_spec');
 
     const result = await submitSpecTool(request.body as any, logger);
     return handleToolResult(result, reply);
@@ -452,7 +457,7 @@ async function registerRoutes(server: FastifyInstance): Promise<void> {
 
   // list_tasks -> GET /mcp/tasks
   server.get(`${basePath}/tasks`, async (request, reply) => {
-    validatePermissions(request.user!, 'list_tasks');
+    validateUserAndPermissions(request.user, 'list_tasks');
 
     // Convert query parameters to proper types
     const query = request.query as any;
@@ -468,82 +473,97 @@ async function registerRoutes(server: FastifyInstance): Promise<void> {
 
   // claim_task -> POST /mcp/tasks/:id/claim
   server.post(`${basePath}/tasks/:id/claim`, async (request, reply) => {
-    validatePermissions(request.user!, 'claim_task');
+    validateUserAndPermissions(request.user, 'claim_task');
 
     const { id } = request.params as { id: string };
     const body = request.body as any;
 
-    const result = await claimTaskTool({
-      task_id: parseInt(id, 10),
-      ...body,
-    }, logger);
+    const result = await claimTaskTool(
+      {
+        task_id: parseInt(id, 10),
+        ...body,
+      },
+      logger
+    );
 
     return handleToolResult(result, reply);
   });
 
   // start_branch -> POST /mcp/tasks/:id/branch
   server.post(`${basePath}/tasks/:id/branch`, async (request, reply) => {
-    validatePermissions(request.user!, 'start_branch');
+    validateUserAndPermissions(request.user, 'start_branch');
 
     const { id } = request.params as { id: string };
     const body = request.body as any;
 
-    const result = await startBranchTool({
-      task_id: parseInt(id, 10),
-      ...body,
-    }, logger);
+    const result = await startBranchTool(
+      {
+        task_id: parseInt(id, 10),
+        ...body,
+      },
+      logger
+    );
 
     return handleToolResult(result, reply);
   });
 
   // push_patch -> POST /mcp/tasks/:id/patch
   server.post(`${basePath}/tasks/:id/patch`, async (request, reply) => {
-    validatePermissions(request.user!, 'push_patch');
+    validateUserAndPermissions(request.user, 'push_patch');
 
     const { id } = request.params as { id: string };
     const body = request.body as any;
 
-    const result = await pushPatchTool({
-      task_id: parseInt(id, 10),
-      ...body,
-    }, logger);
+    const result = await pushPatchTool(
+      {
+        task_id: parseInt(id, 10),
+        ...body,
+      },
+      logger
+    );
 
     return handleToolResult(result, reply);
   });
 
   // open_pr -> POST /mcp/tasks/:id/pr
   server.post(`${basePath}/tasks/:id/pr`, async (request, reply) => {
-    validatePermissions(request.user!, 'open_pr');
+    validateUserAndPermissions(request.user, 'open_pr');
 
     const { id } = request.params as { id: string };
     const body = request.body as any;
 
-    const result = await openPrTool({
-      task_id: parseInt(id, 10),
-      ...body,
-    }, logger);
+    const result = await openPrTool(
+      {
+        task_id: parseInt(id, 10),
+        ...body,
+      },
+      logger
+    );
 
     return handleToolResult(result, reply);
   });
 
   // post_review -> POST /mcp/tasks/:id/review
   server.post(`${basePath}/tasks/:id/review`, async (request, reply) => {
-    validatePermissions(request.user!, 'post_review');
+    validateUserAndPermissions(request.user, 'post_review');
 
     const { id } = request.params as { id: string };
     const body = request.body as any;
 
-    const result = await postReviewTool({
-      task_id: parseInt(id, 10),
-      ...body,
-    }, logger);
+    const result = await postReviewTool(
+      {
+        task_id: parseInt(id, 10),
+        ...body,
+      },
+      logger
+    );
 
     return handleToolResult(result, reply);
   });
 
   // Alternative review endpoint that accepts PR number directly
   server.post(`${basePath}/reviews`, async (request, reply) => {
-    validatePermissions(request.user!, 'post_review');
+    validateUserAndPermissions(request.user, 'post_review');
 
     const result = await postReviewTool(request.body as any, logger);
     return handleToolResult(result, reply);

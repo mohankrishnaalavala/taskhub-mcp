@@ -1,6 +1,6 @@
 /**
  * JWT Authentication service for HTTP transport (Phase 2.5)
- * 
+ *
  * Provides JWT token generation, validation, and user context management.
  */
 
@@ -34,12 +34,12 @@ export function generateToken(user: UserContext): string {
     aud: 'taskhub-api',
     sub: user.userId,
   };
-  
+
   const options: jwt.SignOptions = {
     expiresIn: `${config.JWT_TTL_MIN}m`,
     algorithm: 'HS256',
   };
-  
+
   return jwt.sign(payload, config.JWT_SECRET, options);
 }
 
@@ -66,7 +66,7 @@ export function verifyToken(token: string): UserContext {
       audience: 'taskhub-api',
       issuer: 'taskhub-mcp',
     }) as JwtPayload;
-    
+
     return {
       userId: decoded.userId,
       username: decoded.username,
@@ -76,7 +76,6 @@ export function verifyToken(token: string): UserContext {
       iat: decoded.iat,
       exp: decoded.exp,
     };
-    
   } catch (error) {
     if (error instanceof jwt.TokenExpiredError) {
       throw new AuthenticationError('Token has expired', 'TOKEN_EXPIRED');
@@ -95,12 +94,12 @@ export function extractTokenFromHeader(authHeader: string | undefined): string |
   if (!authHeader) {
     return null;
   }
-  
+
   const parts = authHeader.split(' ');
   if (parts.length !== 2 || parts[0] !== 'Bearer') {
     return null;
   }
-  
+
   return parts[1] || null;
 }
 
@@ -111,7 +110,7 @@ export function hasPermission(user: UserContext, permission: string): boolean {
   if (!user.permissions) {
     return false;
   }
-  
+
   return user.permissions.includes(permission) || user.permissions.includes('*');
 }
 
@@ -122,7 +121,7 @@ export function hasRole(user: UserContext, role: string): boolean {
   if (!user.roles) {
     return false;
   }
-  
+
   return user.roles.includes(role) || user.roles.includes('admin');
 }
 
@@ -159,24 +158,24 @@ export function createAdminUser(overrides: Partial<UserContext> = {}): UserConte
  */
 export function validatePermissions(user: UserContext, operation: string): void {
   const permissionMap: Record<string, string[]> = {
-    'submit_spec': ['tasks:write'],
-    'list_tasks': ['tasks:read'],
-    'claim_task': ['tasks:write'],
-    'start_branch': ['github:write'],
-    'push_patch': ['github:write'],
-    'open_pr': ['github:write'],
-    'post_review': ['github:write'],
+    submit_spec: ['tasks:write'],
+    list_tasks: ['tasks:read'],
+    claim_task: ['tasks:write'],
+    start_branch: ['github:write'],
+    push_patch: ['github:write'],
+    open_pr: ['github:write'],
+    post_review: ['github:write'],
   };
-  
+
   const requiredPermissions = permissionMap[operation];
   if (!requiredPermissions) {
     throw new AuthorizationError(`Unknown operation: ${operation}`, 'UNKNOWN_OPERATION');
   }
-  
-  const hasRequiredPermission = requiredPermissions.some(permission => 
+
+  const hasRequiredPermission = requiredPermissions.some(permission =>
     hasPermission(user, permission)
   );
-  
+
   if (!hasRequiredPermission) {
     throw new AuthorizationError(
       `Insufficient permissions for operation: ${operation}. Required: ${requiredPermissions.join(' or ')}`,
@@ -192,7 +191,7 @@ export function generateDevelopmentToken(user?: Partial<UserContext>): string {
   if (!derivedConfig.isDevelopment) {
     throw new Error('Development tokens can only be generated in development mode');
   }
-  
+
   const devUser = createDevelopmentUser(user);
   return generateToken(devUser);
 }
@@ -202,10 +201,10 @@ export function generateDevelopmentToken(user?: Partial<UserContext>): string {
  */
 export function refreshToken(currentToken: string): string {
   const user = verifyToken(currentToken);
-  
+
   // Remove JWT-specific fields before regenerating
   const { iat, exp, ...userContext } = user;
-  
+
   return generateToken(userContext);
 }
 
@@ -215,10 +214,10 @@ export function refreshToken(currentToken: string): string {
 export function getTokenExpiration(token: string): Date | null {
   try {
     const decoded = jwt.decode(token) as JwtPayload;
-    if (!decoded || !decoded.exp) {
+    if (!decoded?.exp) {
       return null;
     }
-    
+
     return new Date(decoded.exp * 1000);
   } catch {
     return null;
@@ -233,7 +232,7 @@ export function isTokenExpired(token: string): boolean {
   if (!expiration) {
     return true;
   }
-  
+
   return expiration < new Date();
 }
 

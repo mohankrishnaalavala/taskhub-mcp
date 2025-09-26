@@ -6,7 +6,7 @@ module.exports = {
   },
   extends: [
     'eslint:recommended',
-    '@typescript-eslint/recommended',
+    'plugin:@typescript-eslint/recommended',
     'prettier',
   ],
   parser: '@typescript-eslint/parser',
@@ -31,6 +31,6 @@ module.exports = {
     'dist/',
     'node_modules/',
     '*.js',
-    '!.eslintrc.js',
+    '!.eslintrc.cjs',
   ],
 };

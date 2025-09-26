@@ -118,10 +118,14 @@ export function failure<E extends TaskHubError = TaskHubError>(error: E): Result
 }
 
 // Type guards
-export function isSuccess<T, E extends TaskHubError = TaskHubError>(result: Result<T, E>): result is { success: true; data: T } {
+export function isSuccess<T, E extends TaskHubError = TaskHubError>(
+  result: Result<T, E>
+): result is { success: true; data: T } {
   return result.success;
 }
 
-export function isFailure<T, E extends TaskHubError = TaskHubError>(result: Result<T, E>): result is { success: false; error: E } {
+export function isFailure<T, E extends TaskHubError = TaskHubError>(
+  result: Result<T, E>
+): result is { success: false; error: E } {
   return !result.success;
 }

@@ -1,6 +1,6 @@
 /**
  * open_pr MCP Tool
- * 
+ *
  * Creates GitHub pull requests with auto-generated checklists from acceptance criteria
  * Implements Phase 4.5 PR hygiene improvements
  */
@@ -10,7 +10,14 @@ import { validateInput, OpenPrSchema, OpenPrInput } from '../lib/validation.js';
 import { withRetry, prisma } from '../lib/database.js';
 import { getGitHubClient } from '../lib/github.js';
 import { ToolResult, OpenPrResponse } from '../types/mcp.js';
-import { success, failure, isFailure, NotFoundError, ConflictError, ValidationError } from '../types/errors.js';
+import {
+  success,
+  failure,
+  isFailure,
+  NotFoundError,
+  ConflictError,
+  ValidationError,
+} from '../types/errors.js';
 
 /**
  * Generate PR title from task title
@@ -21,7 +28,7 @@ function generatePrTitle(taskTitle: string, taskId: number): string {
   if (taskTitle.length <= maxLength) {
     return taskTitle;
   }
-  
+
   // Truncate and add task ID for context
   const truncated = taskTitle.substring(0, maxLength - 10).trim();
   return `${truncated}... (#${taskId})`;
@@ -71,11 +78,11 @@ export async function openPrTool(args: unknown, logger: Logger): Promise<ToolRes
   // Validate input
   const validationResult = validateInput(OpenPrSchema, args);
   if (isFailure(validationResult)) {
-    logger.warn('open_pr validation failed', { 
+    logger.warn('open_pr validation failed', {
       error: validationResult.error,
-      args 
+      args,
     });
-    
+
     return {
       content: [
         {
@@ -96,7 +103,7 @@ export async function openPrTool(args: unknown, logger: Logger): Promise<ToolRes
 
   const input = validationResult.data;
   const requestId = Math.random().toString(36).substring(2, 8);
-  
+
   logger.info('Processing open_pr request', {
     requestId,
     taskId: input.task_id,
@@ -152,11 +159,9 @@ export async function openPrTool(args: unknown, logger: Logger): Promise<ToolRes
       });
 
       if (!task) {
-        throw new NotFoundError(
-          `Task with ID ${input.task_id} not found`,
-          'TASK_NOT_FOUND',
-          { taskId: input.task_id }
-        );
+        throw new NotFoundError(`Task with ID ${input.task_id} not found`, 'TASK_NOT_FOUND', {
+          taskId: input.task_id,
+        });
       }
 
       // Check if task is in the right status for PR creation
@@ -164,7 +169,7 @@ export async function openPrTool(args: unknown, logger: Logger): Promise<ToolRes
         throw new ConflictError(
           `Task ${input.task_id} must be in progress to create a PR`,
           'TASK_NOT_IN_PROGRESS',
-          { 
+          {
             taskId: input.task_id,
             currentStatus: task.status,
             requiredStatus: 'in_progress',
@@ -208,7 +213,7 @@ export async function openPrTool(args: unknown, logger: Logger): Promise<ToolRes
       try {
         acceptanceCriteria = JSON.parse(task.acceptanceCriteria || '[]');
       } catch (error) {
-        logger.warn('Failed to parse acceptance criteria', { 
+        logger.warn('Failed to parse acceptance criteria', {
           taskId: task.id,
           acceptanceCriteria: task.acceptanceCriteria,
         });

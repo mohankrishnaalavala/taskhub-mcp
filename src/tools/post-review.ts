@@ -1,6 +1,6 @@
 /**
  * post_review MCP Tool
- * 
+ *
  * Posts reviews on GitHub pull requests with block/unblock functionality
  * Supports both task-based and direct PR number reviews
  */
@@ -15,19 +15,29 @@ import { success, failure, isFailure, NotFoundError, ValidationError } from '../
 /**
  * Determine review event type based on block status and notes content
  */
-function determineReviewEvent(block: boolean, notes: string): 'COMMENT' | 'APPROVE' | 'REQUEST_CHANGES' {
+function determineReviewEvent(
+  block: boolean,
+  notes: string
+): 'COMMENT' | 'APPROVE' | 'REQUEST_CHANGES' {
   if (block) {
     return 'REQUEST_CHANGES';
   }
-  
+
   // Check for approval keywords in notes
-  const approvalKeywords = ['approve', 'approved', 'lgtm', 'looks good', 'merge when', 'ready to merge'];
+  const approvalKeywords = [
+    'approve',
+    'approved',
+    'lgtm',
+    'looks good',
+    'merge when',
+    'ready to merge',
+  ];
   const notesLower = notes.toLowerCase();
-  
+
   if (approvalKeywords.some(keyword => notesLower.includes(keyword))) {
     return 'APPROVE';
   }
-  
+
   return 'COMMENT';
 }
 
@@ -53,11 +63,11 @@ export async function postReviewTool(args: unknown, logger: Logger): Promise<Too
   // Validate input
   const validationResult = validateInput(PostReviewSchema, args);
   if (isFailure(validationResult)) {
-    logger.warn('post_review validation failed', { 
+    logger.warn('post_review validation failed', {
       error: validationResult.error,
-      args 
+      args,
     });
-    
+
     return {
       content: [
         {
@@ -78,7 +88,7 @@ export async function postReviewTool(args: unknown, logger: Logger): Promise<Too
 
   const input = validationResult.data;
   const requestId = Math.random().toString(36).substring(2, 8);
-  
+
   logger.info('Processing post_review request', {
     requestId,
     taskId: input.task_id,
@@ -138,11 +148,9 @@ export async function postReviewTool(args: unknown, logger: Logger): Promise<Too
         });
 
         if (!task) {
-          throw new NotFoundError(
-            `Task with ID ${input.task_id} not found`,
-            'TASK_NOT_FOUND',
-            { taskId: input.task_id }
-          );
+          throw new NotFoundError(`Task with ID ${input.task_id} not found`, 'TASK_NOT_FOUND', {
+            taskId: input.task_id,
+          });
         }
 
         // Use task's repo if not provided
@@ -165,7 +173,7 @@ export async function postReviewTool(args: unknown, logger: Logger): Promise<Too
               const eventData = JSON.parse(prEvent.payload);
               prNumber = eventData.pr_number;
             } catch (error) {
-              logger.warn('Failed to parse PR event data', { 
+              logger.warn('Failed to parse PR event data', {
                 taskId: input.task_id,
                 eventId: prEvent.id,
               });
@@ -205,7 +213,7 @@ export async function postReviewTool(args: unknown, logger: Logger): Promise<Too
 
       // Determine review event type
       const reviewEvent = determineReviewEvent(input.block || false, input.notes);
-      
+
       // Create the review
       const createReviewResult = await githubClient.createReview({
         repo,

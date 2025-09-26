@@ -1,6 +1,6 @@
 /**
  * submit_spec MCP Tool
- * 
+ *
  * Creates a new task with structured requirements
  */
 
@@ -19,7 +19,7 @@ export async function submitSpecTool(args: unknown, logger: Logger): Promise<Too
   // Validate input
   const validationResult = validateInput(SubmitSpecSchema, args);
   if (isFailure(validationResult)) {
-    logger.warn('Input validation failed', { 
+    logger.warn('Input validation failed', {
       error: validationResult.error,
       args,
     });
@@ -43,7 +43,7 @@ export async function submitSpecTool(args: unknown, logger: Logger): Promise<Too
   }
 
   const input = validationResult.data;
-  logger.info('Creating new task', { 
+  logger.info('Creating new task', {
     title: input.title,
     repo: input.repo,
     criteriaCount: input.acceptance_criteria.length,
@@ -63,7 +63,7 @@ export async function submitSpecTool(args: unknown, logger: Logger): Promise<Too
   });
 
   if (isFailure(createResult)) {
-    logger.error('Failed to create task', { 
+    logger.error('Failed to create task', {
       error: createResult.error,
       input,
     });

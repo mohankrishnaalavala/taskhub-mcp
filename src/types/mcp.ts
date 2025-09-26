@@ -84,7 +84,7 @@ export interface ClaimTaskResponse {
   title: string;
   description: string;
   status: TaskStatus;
-  assignee: string;  // Required since we're claiming the task
+  assignee: string; // Required since we're claiming the task
   repo: string | undefined;
   acceptance_criteria: string[];
   claimed_at: string;
@@ -136,8 +136,6 @@ export interface PostReviewResponse {
   dry_run: boolean;
   posted_at: string;
 }
-
-
 
 // Utility type for JSON serialization
 export function serializeForDatabase(data: any): string {

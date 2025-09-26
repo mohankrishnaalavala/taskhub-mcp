@@ -1,6 +1,6 @@
 /**
  * push_patch MCP Tool
- * 
+ *
  * Uploads code changes to the task branch with validation and dry-run support
  */
 
@@ -9,7 +9,14 @@ import { validateInput, PushPatchSchema, PushPatchInput } from '../lib/validatio
 import { withRetry, prisma } from '../lib/database.js';
 import { getGitHubClient, GitHubFile } from '../lib/github.js';
 import { ToolResult, PushPatchResponse } from '../types/mcp.js';
-import { success, failure, isFailure, NotFoundError, ConflictError, ValidationError } from '../types/errors.js';
+import {
+  success,
+  failure,
+  isFailure,
+  NotFoundError,
+  ConflictError,
+  ValidationError,
+} from '../types/errors.js';
 import { validateActionForStateWithDetails } from '../lib/state-machine.js';
 
 /**
@@ -21,11 +28,11 @@ export async function pushPatchTool(args: unknown, logger: Logger): Promise<Tool
   // Validate input
   const validationResult = validateInput(PushPatchSchema, args);
   if (isFailure(validationResult)) {
-    logger.warn('push_patch validation failed', { 
+    logger.warn('push_patch validation failed', {
       error: validationResult.error,
-      args 
+      args,
     });
-    
+
     return {
       content: [
         {
@@ -46,7 +53,7 @@ export async function pushPatchTool(args: unknown, logger: Logger): Promise<Tool
 
   const input = validationResult.data;
   const requestId = Math.random().toString(36).substring(2, 8);
-  
+
   logger.info('Processing push_patch request', {
     requestId,
     taskId: input.task_id,
@@ -98,11 +105,9 @@ export async function pushPatchTool(args: unknown, logger: Logger): Promise<Tool
       });
 
       if (!task) {
-        throw new NotFoundError(
-          `Task with ID ${input.task_id} not found`,
-          'TASK_NOT_FOUND',
-          { taskId: input.task_id }
-        );
+        throw new NotFoundError(`Task with ID ${input.task_id} not found`, 'TASK_NOT_FOUND', {
+          taskId: input.task_id,
+        });
       }
 
       // Validate state machine transition (Phase 4.5)
@@ -131,14 +136,15 @@ export async function pushPatchTool(args: unknown, logger: Logger): Promise<Tool
       const repo = { owner: repoParts[0], repo: repoParts[1] };
 
       // Validate files
-      const githubFiles: GitHubFile[] = input.files.map((file) => ({
+      const githubFiles: GitHubFile[] = input.files.map(file => ({
         path: file.path,
         content: file.content,
         encoding: file.encoding || 'utf-8',
       }));
 
       // Generate commit message
-      const commitMessage = input.commit_message || `Update files for task ${input.task_id}: ${task.title}`;
+      const commitMessage =
+        input.commit_message || `Update files for task ${input.task_id}: ${task.title}`;
 
       // Push files to the branch
       const pushFilesResult = await githubClient.pushFiles({

@@ -1,0 +1,554 @@
+openapi: 3.0.0
+info:
+  title: TaskHub MCP API
+  description: Task management and GitHub workflow automation for rapid product development
+  version: 1.0.0
+  contact:
+    name: TaskHub MCP Server
+    url: https://github.com/mohankrishnaalavala/taskhub-mcp
+
+servers:
+  - url: http://localhost:3000
+    description: Local development server
+  - url: https://your-production-domain.com
+    description: Production server
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token obtained from /auth/demo-token endpoint
+
+  schemas:
+    Task:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: Unique task identifier
+          example: 1
+        title:
+          type: string
+          description: Task title
+          example: "Add user authentication"
+        description:
+          type: string
+          description: Detailed task description
+          example: "Implement JWT-based authentication system with login/logout"
+        status:
+          type: string
+          enum: [todo, claimed, in_progress, review, done]
+          description: Current task status
+          example: "todo"
+        assignee:
+          type: string
+          nullable: true
+          description: Username of assigned developer
+          example: "developer-username"
+        repo:
+          type: string
+          description: GitHub repository in format owner/repo
+          example: "myorg/myapp"
+        branch:
+          type: string
+          nullable: true
+          description: Git branch name for this task
+          example: "feature/user-auth-1"
+        acceptance_criteria:
+          type: array
+          items:
+            type: string
+          description: List of acceptance criteria
+          example: ["Login form works", "JWT tokens generated", "Protected routes work"]
+        created_at:
+          type: string
+          format: date-time
+          description: Task creation timestamp
+        updated_at:
+          type: string
+          format: date-time
+          description: Last update timestamp
+
+    TaskList:
+      type: object
+      properties:
+        tasks:
+          type: array
+          items:
+            $ref: '#/components/schemas/Task'
+        total:
+          type: integer
+          description: Total number of tasks
+        limit:
+          type: integer
+          description: Number of tasks per page
+        offset:
+          type: integer
+          description: Offset for pagination
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Error type
+          example: "Authentication failed"
+        message:
+          type: string
+          description: Human-readable error message
+          example: "Invalid token"
+        code:
+          type: string
+          description: Error code for programmatic handling
+          example: "INVALID_TOKEN"
+        requestId:
+          type: string
+          description: Unique request identifier for debugging
+          example: "req-123"
+
+security:
+  - BearerAuth: []
+
+paths:
+  /healthz:
+    get:
+      summary: Health check
+      description: Check if the server is running and healthy
+      security: []
+      responses:
+        '200':
+          description: Server is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  timestamp:
+                    type: string
+                    format: date-time
+                  version:
+                    type: string
+                    example: "1.0.0"
+                  uptime:
+                    type: number
+                    example: 123.456
+
+  /auth/demo-token:
+    post:
+      summary: Get demo authentication token
+      description: Generate a demo JWT token for development and testing
+      security: []
+      responses:
+        '200':
+          description: Demo token generated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                    description: JWT token for authentication
+                  type:
+                    type: string
+                    example: "Bearer"
+                  expiresIn:
+                    type: string
+                    example: "30m"
+                  user:
+                    type: object
+                    properties:
+                      userId:
+                        type: string
+                      username:
+                        type: string
+                      email:
+                        type: string
+                      roles:
+                        type: array
+                        items:
+                          type: string
+
+  /mcp/tasks:
+    get:
+      summary: List all tasks
+      description: Retrieve a paginated list of tasks with optional filtering
+      parameters:
+        - name: limit
+          in: query
+          description: Maximum number of tasks to return
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 100
+        - name: offset
+          in: query
+          description: Number of tasks to skip for pagination
+          schema:
+            type: integer
+            default: 0
+            minimum: 0
+        - name: status
+          in: query
+          description: Filter tasks by status
+          schema:
+            type: string
+            enum: [todo, claimed, in_progress, review, done]
+        - name: assignee
+          in: query
+          description: Filter tasks by assignee
+          schema:
+            type: string
+        - name: repo
+          in: query
+          description: Filter tasks by repository
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of tasks retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskList'
+        '401':
+          description: Authentication failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    post:
+      summary: Create a new task
+      description: Create a new development task with acceptance criteria
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - title
+                - description
+                - repo
+                - acceptance_criteria
+              properties:
+                title:
+                  type: string
+                  description: Task title
+                  example: "Add user authentication"
+                  minLength: 1
+                  maxLength: 200
+                description:
+                  type: string
+                  description: Detailed task description
+                  example: "Implement JWT-based authentication system with login/logout functionality"
+                  minLength: 1
+                  maxLength: 2000
+                repo:
+                  type: string
+                  description: GitHub repository in format owner/repo
+                  example: "myorg/myapp"
+                  pattern: "^[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+$"
+                acceptance_criteria:
+                  type: array
+                  description: List of acceptance criteria that must be met
+                  items:
+                    type: string
+                  example: ["Login form works", "JWT tokens generated", "Protected routes work"]
+                  minItems: 1
+                  maxItems: 20
+      responses:
+        '200':
+          description: Task created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  task:
+                    $ref: '#/components/schemas/Task'
+        '400':
+          description: Validation failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Authentication failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /mcp/tasks/{id}/claim:
+    post:
+      summary: Claim a task for development
+      description: Assign a task to a developer and change status to claimed
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Task ID to claim
+          schema:
+            type: integer
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - assignee
+              properties:
+                assignee:
+                  type: string
+                  description: Username of the developer claiming the task
+                  example: "developer-username"
+                  minLength: 1
+                  maxLength: 100
+      responses:
+        '200':
+          description: Task claimed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  task:
+                    $ref: '#/components/schemas/Task'
+        '400':
+          description: Task cannot be claimed (wrong status or validation error)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Task not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /mcp/tasks/{id}/branch:
+    post:
+      summary: Create a GitHub branch for the task
+      description: Create a feature branch in the task's repository for development
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Task ID to create branch for
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '200':
+          description: Branch created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  branch:
+                    type: string
+                    description: Name of the created branch
+                    example: "feature/user-auth-1"
+                  url:
+                    type: string
+                    description: GitHub URL of the branch
+        '400':
+          description: Branch creation failed (task not claimed or other error)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Task not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /mcp/tasks/{id}/patch:
+    post:
+      summary: Push code changes to the task branch
+      description: Commit and push code changes to the task's feature branch
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Task ID to push changes for
+          schema:
+            type: integer
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - files
+                - message
+              properties:
+                files:
+                  type: array
+                  description: List of files to create or modify
+                  items:
+                    type: object
+                    required:
+                      - path
+                      - content
+                    properties:
+                      path:
+                        type: string
+                        description: File path relative to repository root
+                        example: "src/components/LoginForm.tsx"
+                      content:
+                        type: string
+                        description: File content
+                        example: "import React from 'react';\n\nexport const LoginForm = () => {\n  return <form>...</form>;\n};"
+                  minItems: 1
+                  maxItems: 50
+                message:
+                  type: string
+                  description: Commit message
+                  example: "feat: implement user authentication"
+                  minLength: 1
+                  maxLength: 500
+      responses:
+        '200':
+          description: Code changes pushed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  commit:
+                    type: string
+                    description: Commit SHA
+                  url:
+                    type: string
+                    description: GitHub URL of the commit
+        '400':
+          description: Push failed (validation error or Git error)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /mcp/tasks/{id}/pr:
+    post:
+      summary: Open a pull request for the task
+      description: Create a pull request from the task branch to the main branch
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Task ID to create PR for
+          schema:
+            type: integer
+            minimum: 1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                  description: Pull request title (defaults to task title)
+                  example: "Add user authentication"
+                  maxLength: 200
+                body:
+                  type: string
+                  description: Pull request description (defaults to task description + checklist)
+                  example: "Implements JWT-based authentication system\n\n## Checklist\n- [x] Login form works\n- [x] JWT tokens generated"
+                  maxLength: 5000
+                base:
+                  type: string
+                  description: Target branch for the PR
+                  example: "main"
+                  default: "main"
+      responses:
+        '200':
+          description: Pull request created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pr:
+                    type: object
+                    properties:
+                      number:
+                        type: integer
+                        description: PR number
+                      url:
+                        type: string
+                        description: GitHub URL of the PR
+                      title:
+                        type: string
+                        description: PR title
+
+  /mcp/tasks/{id}/review:
+    post:
+      summary: Post a code review on the pull request
+      description: Submit a code review with approval, comments, or change requests
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Task ID to review
+          schema:
+            type: integer
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - body
+                - event
+              properties:
+                body:
+                  type: string
+                  description: Review comment body
+                  example: "Great implementation! The authentication flow looks solid."
+                  minLength: 1
+                  maxLength: 2000
+                event:
+                  type: string
+                  description: Review action
+                  enum: [COMMENT, APPROVE, REQUEST_CHANGES]
+                  example: "APPROVE"
+      responses:
+        '200':
+          description: Review posted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  review:
+                    type: object
+                    properties:
+                      id:
+                        type: integer
+                        description: Review ID
+                      url:
+                        type: string
+                        description: GitHub URL of the review
+                      state:
+                        type: string
+                        description: Review state

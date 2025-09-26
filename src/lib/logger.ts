@@ -62,7 +62,11 @@ export function sanitize(obj: any): any {
     const sanitized: any = {};
     for (const [key, value] of Object.entries(obj)) {
       const lowerKey = key.toLowerCase();
-      if (lowerKey.includes('token') || lowerKey.includes('password') || lowerKey.includes('secret')) {
+      if (
+        lowerKey.includes('token') ||
+        lowerKey.includes('password') ||
+        lowerKey.includes('secret')
+      ) {
         sanitized[key] = '[REDACTED]';
       } else {
         sanitized[key] = sanitize(value);

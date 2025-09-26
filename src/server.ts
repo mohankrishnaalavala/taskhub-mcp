@@ -2,7 +2,7 @@
 
 /**
  * TaskHub MCP Server
- * 
+ *
  * A Model Context Protocol server that enables ChatGPT ↔ Augment ↔ GitHub workflow
  * for rapid product development.
  */
@@ -51,7 +51,7 @@ async function createServer(): Promise<Server> {
   // List available tools
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     serverLogger.debug('Listing available tools');
-    
+
     return {
       tools: [
         {
@@ -246,7 +246,8 @@ async function createServer(): Promise<Server> {
         },
         {
           name: 'open_pr',
-          description: 'Create a GitHub pull request with auto-generated checklist from acceptance criteria',
+          description:
+            'Create a GitHub pull request with auto-generated checklist from acceptance criteria',
           inputSchema: {
             type: 'object',
             required: ['task_id'],
@@ -328,10 +329,10 @@ async function createServer(): Promise<Server> {
   });
 
   // Handle tool calls
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+  server.setRequestHandler(CallToolRequestSchema, async request => {
     const { name, arguments: args } = request.params;
-    
-    const toolLogger = createChildLogger({ 
+
+    const toolLogger = createChildLogger({
       component: 'tool-handler',
       tool: name,
       requestId: Math.random().toString(36).substring(7),
@@ -488,7 +489,6 @@ async function main() {
 
     process.on('SIGINT', shutdown);
     process.on('SIGTERM', shutdown);
-
   } catch (error) {
     serverLogger.error('Failed to start server', {
       error: error instanceof Error ? error.message : String(error),
@@ -500,7 +500,7 @@ async function main() {
 
 // Start the server if this file is run directly
 if (import.meta.url === `file://${process.argv[1]}`) {
-  main().catch((error) => {
+  main().catch(error => {
     console.error('Unhandled error:', error);
     process.exit(1);
   });
