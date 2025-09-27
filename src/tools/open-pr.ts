@@ -141,118 +141,121 @@ export async function openPrTool(args: unknown, logger: Logger): Promise<ToolRes
 
     const githubClient = githubClientResult.data;
 
-    // Use database retry wrapper for the PR creation operation
-    const prResult = await withRetry(async () => {
-      // Get task details
-      const task = await prisma.task.findUnique({
+    // 1) Get task (no retry) and validate preconditions
+    const task = await prisma.task.findUnique({
+      where: { id: input.task_id },
+      select: {
+        id: true,
+        title: true,
+        description: true,
+        status: true,
+        assignee: true,
+        repo: true,
+        branch: true,
+        acceptanceCriteria: true,
+      },
+    });
+
+    if (!task) {
+      return {
+        content: [
+          { type: 'text', text: JSON.stringify({ error: { type: 'not_found', code: 'TASK_NOT_FOUND', message: `Task with ID ${input.task_id} not found`, details: { taskId: input.task_id } } }) },
+        ],
+        isError: true,
+      };
+    }
+
+    if (task.status !== 'in_progress') {
+      return {
+        content: [
+          { type: 'text', text: JSON.stringify({ error: { type: 'conflict', code: 'TASK_NOT_IN_PROGRESS', message: `Task ${input.task_id} must be in progress to create a PR`, details: { taskId: input.task_id, currentStatus: task.status, requiredStatus: 'in_progress' } } }) },
+        ],
+        isError: true,
+      };
+    }
+
+    if (!task.branch) {
+      return {
+        content: [
+          { type: 'text', text: JSON.stringify({ error: { type: 'conflict', code: 'TASK_NO_BRANCH', message: `Task ${input.task_id} does not have a branch. Run start_branch first.`, details: { taskId: input.task_id } } }) },
+        ],
+        isError: true,
+      };
+    }
+
+    const repoString = input.repo || task.repo;
+    if (!repoString) {
+      return {
+        content: [
+          { type: 'text', text: JSON.stringify({ error: { type: 'validation', code: 'REPO_REQUIRED', message: 'Repository must be specified either in the request or in the task', details: { taskId: input.task_id } } }) },
+        ],
+        isError: true,
+      };
+    }
+
+    const repoParts = repoString.split('/');
+    if (repoParts.length !== 2 || !repoParts[0] || !repoParts[1]) {
+      return {
+        content: [
+          { type: 'text', text: JSON.stringify({ error: { type: 'validation', code: 'INVALID_REPO_FORMAT', message: 'Repository must be in format "owner/repo"', details: { repo: repoString } } }) },
+        ],
+        isError: true,
+      };
+    }
+    const repo = { owner: repoParts[0], repo: repoParts[1] } as const;
+
+    // Parse acceptance criteria (best effort)
+    let acceptanceCriteria: string[] = [];
+    try {
+      acceptanceCriteria = JSON.parse(task.acceptanceCriteria || '[]');
+    } catch {
+      logger.warn('Failed to parse acceptance criteria', { taskId: task.id });
+    }
+
+    const prTitle = input.title || generatePrTitle(task.title, task.id);
+    const prBody = generatePrBody(task, acceptanceCriteria);
+
+    const isDraft = input.force ? (input.draft ?? false) : (input.draft ?? true);
+
+    // 2) Create PR on GitHub (no DB retry here)
+    const createPrResult = await githubClient.createPullRequest({
+      repo,
+      title: prTitle,
+      body: prBody,
+      head: task.branch,
+      draft: isDraft,
+      dryRun: input.dry_run || false,
+    });
+
+    if (isFailure(createPrResult)) {
+      return {
+        content: [
+          { type: 'text', text: JSON.stringify({ error: createPrResult.error }) },
+        ],
+        isError: true,
+      };
+    }
+
+    const pr = createPrResult.data;
+
+    // 3) Update task status and log event (retry only DB writes)
+    const updateTaskResult = await withRetry(async () =>
+      prisma.task.update({
         where: { id: input.task_id },
-        select: {
-          id: true,
-          title: true,
-          description: true,
-          status: true,
-          assignee: true,
-          repo: true,
-          branch: true,
-          acceptanceCriteria: true,
-        },
-      });
+        data: { status: 'review', updatedAt: new Date() },
+      })
+    );
+    if (isFailure(updateTaskResult)) {
+      return {
+        content: [
+          { type: 'text', text: JSON.stringify({ error: updateTaskResult.error }) },
+        ],
+        isError: true,
+      };
+    }
 
-      if (!task) {
-        throw new NotFoundError(`Task with ID ${input.task_id} not found`, 'TASK_NOT_FOUND', {
-          taskId: input.task_id,
-        });
-      }
-
-      // Check if task is in the right status for PR creation
-      if (task.status !== 'in_progress') {
-        throw new ConflictError(
-          `Task ${input.task_id} must be in progress to create a PR`,
-          'TASK_NOT_IN_PROGRESS',
-          {
-            taskId: input.task_id,
-            currentStatus: task.status,
-            requiredStatus: 'in_progress',
-          }
-        );
-      }
-
-      // Check if task has a branch
-      if (!task.branch) {
-        throw new ConflictError(
-          `Task ${input.task_id} does not have a branch. Run start_branch first.`,
-          'TASK_NO_BRANCH',
-          { taskId: input.task_id }
-        );
-      }
-
-      // Use provided repo or task's repo
-      const repoString = input.repo || task.repo;
-      if (!repoString) {
-        throw new ValidationError(
-          'Repository must be specified either in the request or in the task',
-          'REPO_REQUIRED',
-          { taskId: input.task_id }
-        );
-      }
-
-      // Parse repository string
-      const repoParts = repoString.split('/');
-      if (repoParts.length !== 2 || !repoParts[0] || !repoParts[1]) {
-        throw new ValidationError(
-          'Repository must be in format "owner/repo"',
-          'INVALID_REPO_FORMAT',
-          { repo: repoString }
-        );
-      }
-
-      const repo = { owner: repoParts[0], repo: repoParts[1] };
-
-      // Parse acceptance criteria
-      let acceptanceCriteria: string[] = [];
-      try {
-        acceptanceCriteria = JSON.parse(task.acceptanceCriteria || '[]');
-      } catch (error) {
-        logger.warn('Failed to parse acceptance criteria', {
-          taskId: task.id,
-          acceptanceCriteria: task.acceptanceCriteria,
-        });
-      }
-
-      // Generate PR title and body
-      const prTitle = input.title || generatePrTitle(task.title, task.id);
-      const prBody = generatePrBody(task, acceptanceCriteria);
-
-      // Determine if PR should be draft (Phase 4.5 policy)
-      const isDraft = input.force ? (input.draft ?? false) : (input.draft ?? true);
-
-      // Create the pull request
-      const createPrResult = await githubClient.createPullRequest({
-        repo,
-        title: prTitle,
-        body: prBody,
-        head: task.branch,
-        draft: isDraft,
-        dryRun: input.dry_run || false,
-      });
-
-      if (isFailure(createPrResult)) {
-        throw createPrResult.error;
-      }
-
-      const pr = createPrResult.data;
-
-      // Update task status to review
-      const updatedTask = await prisma.task.update({
-        where: { id: input.task_id },
-        data: {
-          status: 'review',
-          updatedAt: new Date(),
-        },
-      });
-
-      // Log the PR creation event
-      await prisma.event.create({
+    await withRetry(async () =>
+      prisma.event.create({
         data: {
           taskId: input.task_id,
           actor: task.assignee || 'system',
@@ -268,70 +271,34 @@ export async function openPrTool(args: unknown, logger: Logger): Promise<ToolRes
             timestamp: new Date().toISOString(),
           }),
         },
-      });
-
-      return {
-        task: updatedTask,
-        pr,
-        repo: repoString,
-      };
-    });
-
-    if (isFailure(prResult)) {
-      logger.error('Failed to create pull request', {
-        requestId,
-        taskId: input.task_id,
-        error: prResult.error,
-      });
-
-      return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify({
-              error: {
-                type: prResult.error.type,
-                message: prResult.error.message,
-                code: prResult.error.code,
-                details: prResult.error.details,
-              },
-            }),
-          },
-        ],
-        isError: true,
-      };
-    }
-
-    const result = prResult.data;
+      })
+    );
 
     const response: OpenPrResponse = {
-      task_id: result.task.id,
-      pr_number: result.pr.number,
-      repo: result.repo,
-      title: result.pr.title,
-      url: result.pr.url,
-      draft: result.pr.draft,
-      branch_name: result.pr.head.ref,
-      status: result.task.status as any,
+      task_id: task.id,
+      pr_number: pr.number,
+      repo: repoString,
+      title: pr.title,
+      url: pr.url,
+      draft: pr.draft,
+      branch_name: pr.head.ref,
+      status: 'review' as any,
       dry_run: input.dry_run || false,
       created_at: new Date().toISOString(),
     };
 
     logger.info('Pull request created successfully', {
       requestId,
-      taskId: result.task.id,
-      prNumber: result.pr.number,
-      url: result.pr.url,
-      draft: result.pr.draft,
+      taskId: task.id,
+      prNumber: pr.number,
+      url: pr.url,
+      draft: pr.draft,
       dryRun: input.dry_run,
     });
 
     return {
       content: [
-        {
-          type: 'text',
-          text: JSON.stringify(response),
-        },
+        { type: 'text', text: JSON.stringify(response) },
       ],
     };
   } catch (error) {

@@ -4,7 +4,7 @@ info:
   description: Task management and GitHub workflow automation
   version: 1.0.0
 servers:
-  - url: https://queue-memorabilia-background-earning.trycloudflare.com
+  - url: https://sphere-olive-nightlife-word.trycloudflare.com
     description: TaskHub MCP Server
 
 paths:

@@ -110,97 +110,122 @@ export async function startBranchTool(args: unknown, logger: Logger): Promise<To
 
     const githubClient = githubClientResult.data;
 
-    // Use database retry wrapper for the branch creation operation
-    const branchResult = await withRetry(async () => {
-      // Get task details
-      const task = await prisma.task.findUnique({
+    // 1) Load task (no retry) and validate transition
+    const task = await prisma.task.findUnique({
+      where: { id: input.task_id },
+      select: {
+        id: true,
+        title: true,
+        description: true,
+        status: true,
+        assignee: true,
+        repo: true,
+        acceptanceCriteria: true,
+      },
+    });
+
+    if (!task) {
+      return {
+        content: [
+          { type: 'text', text: JSON.stringify({ error: { type: 'not_found', code: 'TASK_NOT_FOUND', message: `Task with ID ${input.task_id} not found`, details: { taskId: input.task_id } } }) },
+        ],
+        isError: true,
+      };
+    }
+
+    try {
+      validateActionForStateWithDetails('start_branch', task.status as any, input.task_id);
+    } catch (e) {
+      // State errors are not DB-related; surface directly
+      const err = e as any;
+      return {
+        content: [
+          { type: 'text', text: JSON.stringify({ error: { type: err.type || 'validation', code: err.code || 'STATE_INVALID', message: err.message || 'Invalid state for start_branch', details: err.details || {} } }) },
+        ],
+        isError: true,
+      };
+    }
+
+    // 2) Resolve repo and branch names (no retry)
+    const repoString = input.repo || task.repo;
+    if (!repoString) {
+      return {
+        content: [
+          { type: 'text', text: JSON.stringify({ error: { type: 'validation', code: 'REPO_REQUIRED', message: 'Repository must be specified either in the request or in the task', details: { taskId: input.task_id } } }) },
+        ],
+        isError: true,
+      };
+    }
+
+    const repoParts = repoString.split('/');
+    if (repoParts.length !== 2 || !repoParts[0] || !repoParts[1]) {
+      return {
+        content: [
+          { type: 'text', text: JSON.stringify({ error: { type: 'validation', code: 'INVALID_REPO_FORMAT', message: 'Repository must be in format "owner/repo"', details: { repo: repoString } } }) },
+        ],
+        isError: true,
+      };
+    }
+    const repo = { owner: repoParts[0], repo: repoParts[1] } as const;
+    const branchName = input.branch_name || generateBranchName(task.id, task.title);
+
+    // 3) Query GitHub (no DB retry here)
+    const repoInfoResult = await githubClient.getRepository(repo);
+    if (isFailure(repoInfoResult)) {
+      return {
+        content: [
+          { type: 'text', text: JSON.stringify({ error: repoInfoResult.error }) },
+        ],
+        isError: true,
+      };
+    }
+    const repoInfo = repoInfoResult.data;
+
+    const createBranchResult = await githubClient.createBranch({
+      repo,
+      branchName,
+      fromBranch: input.base_branch || repoInfo.defaultBranch,
+      dryRun: input.dry_run ?? false,
+    });
+    if (isFailure(createBranchResult)) {
+      return {
+        content: [
+          { type: 'text', text: JSON.stringify({ error: createBranchResult.error }) },
+        ],
+        isError: true,
+      };
+    }
+    const branch = createBranchResult.data;
+
+    // 4) Persist branch and optional status change (retry only DB writes)
+    const updateTaskResult = await withRetry(async () =>
+      prisma.task.update({
         where: { id: input.task_id },
-        select: {
-          id: true,
-          title: true,
-          description: true,
-          status: true,
-          assignee: true,
-          repo: true,
-          acceptanceCriteria: true,
+        data: {
+          // always persist the branch we created
+          branch: branchName,
+          // update repo if provided
+          repo: repoString,
+          // if currently claimed, move to in_progress
+          status: task.status === 'claimed' ? 'in_progress' : task.status,
+          updatedAt: new Date(),
         },
-      });
+      })
+    );
+    if (isFailure(updateTaskResult)) {
+      return {
+        content: [
+          { type: 'text', text: JSON.stringify({ error: updateTaskResult.error }) },
+        ],
+        isError: true,
+      };
+    }
+    const updatedTask = updateTaskResult.data as typeof task;
 
-      if (!task) {
-        throw new NotFoundError(`Task with ID ${input.task_id} not found`, 'TASK_NOT_FOUND', {
-          taskId: input.task_id,
-        });
-      }
-
-      // Validate state machine transition (Phase 4.5)
-      try {
-        validateActionForStateWithDetails('start_branch', task.status as any, input.task_id);
-      } catch (error) {
-        // Re-throw state machine errors directly (don't retry)
-        throw error;
-      }
-
-      // Use provided repo or task's repo
-      const repoString = input.repo || task.repo;
-      if (!repoString) {
-        throw new ValidationError(
-          'Repository must be specified either in the request or in the task',
-          'REPO_REQUIRED',
-          { taskId: input.task_id }
-        );
-      }
-
-      // Parse repository string
-      const repoParts = repoString.split('/');
-      if (repoParts.length !== 2 || !repoParts[0] || !repoParts[1]) {
-        throw new ValidationError(
-          'Repository must be in format "owner/repo"',
-          'INVALID_REPO_FORMAT',
-          { repo: repoString }
-        );
-      }
-
-      const repo = { owner: repoParts[0], repo: repoParts[1] };
-
-      // Generate branch name
-      const branchName = input.branch_name || generateBranchName(task.id, task.title);
-
-      // Get repository information
-      const repoInfoResult = await githubClient.getRepository(repo);
-      if (isFailure(repoInfoResult)) {
-        throw repoInfoResult.error;
-      }
-
-      const repoInfo = repoInfoResult.data;
-
-      // Create the branch
-      const createBranchResult = await githubClient.createBranch({
-        repo,
-        branchName,
-        fromBranch: input.base_branch || repoInfo.defaultBranch,
-        dryRun: input.dry_run ?? false,
-      });
-
-      if (isFailure(createBranchResult)) {
-        throw createBranchResult.error;
-      }
-
-      const branch = createBranchResult.data;
-
-      // Update task status to in_progress if not already
-      let updatedTask = task;
-      if (task.status === 'claimed') {
-        updatedTask = await prisma.task.update({
-          where: { id: input.task_id },
-          data: {
-            status: 'in_progress',
-            repo: repoString, // Update repo if it was provided
-            updatedAt: new Date(),
-          },
-        });
-
-        // Log the status change event
-        await prisma.event.create({
+    // Log events (retry writes)
+    if (task.status === 'claimed') {
+      await withRetry(async () =>
+        prisma.event.create({
           data: {
             taskId: input.task_id,
             actor: task.assignee || 'system',
@@ -213,11 +238,12 @@ export async function startBranchTool(args: unknown, logger: Logger): Promise<To
               timestamp: new Date().toISOString(),
             }),
           },
-        });
-      }
+        })
+      );
+    }
 
-      // Log the branch creation event
-      await prisma.event.create({
+    await withRetry(async () =>
+      prisma.event.create({
         data: {
           taskId: input.task_id,
           actor: task.assignee || 'system',
@@ -231,68 +257,30 @@ export async function startBranchTool(args: unknown, logger: Logger): Promise<To
             timestamp: new Date().toISOString(),
           }),
         },
-      });
-
-      return {
-        task: updatedTask,
-        branch,
-        repo: repoString,
-        branchName,
-        baseBranch: input.base_branch || repoInfo.defaultBranch,
-      };
-    });
-
-    if (isFailure(branchResult)) {
-      logger.error('Failed to create branch', {
-        requestId,
-        taskId: input.task_id,
-        error: branchResult.error,
-      });
-
-      return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify({
-              error: {
-                type: branchResult.error.type,
-                message: branchResult.error.message,
-                code: branchResult.error.code,
-                details: branchResult.error.details,
-              },
-            }),
-          },
-        ],
-        isError: true,
-      };
-    }
-
-    const result = branchResult.data;
+      })
+    );
 
     const response: StartBranchResponse = {
-      task_id: result.task.id,
-      branch_name: result.branchName,
-      repo: result.repo,
-      base_branch: result.baseBranch,
-      branch_sha: result.branch.sha,
-      status: result.task.status as any,
+      task_id: updatedTask.id,
+      branch_name: branchName,
+      repo: repoString,
+      base_branch: input.base_branch || repoInfo.defaultBranch,
+      branch_sha: branch.sha,
+      status: (task.status === 'claimed' ? 'in_progress' : task.status) as any,
       dry_run: input.dry_run || false,
     };
 
     logger.info('Branch created successfully', {
       requestId,
-      taskId: result.task.id,
-      branchName: result.branchName,
-      repo: result.repo,
+      taskId: updatedTask.id,
+      branchName,
+      repo: repoString,
       dryRun: input.dry_run,
     });
 
     return {
       content: [
-        {
-          type: 'text',
-          text: JSON.stringify(response),
-        },
+        { type: 'text', text: JSON.stringify(response) },
       ],
     };
   } catch (error) {
