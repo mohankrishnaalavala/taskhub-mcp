@@ -35,7 +35,11 @@ const envSchema = z.object({
   TRANSPORTS: z.string().default('stdio'),
   BASE_PATH: z.string().default('/mcp'),
 
-  // JWT Authentication
+  // Auto-claiming behavior for new tasks
+  AUTO_CLAIM_ON_CREATE: z.coerce.boolean().default(true),
+  DEFAULT_ASSIGNEE: z.string().default('augment-code'),
+
+  // JWT Authentication (legacy; not used in no-auth mode)
   JWT_SECRET: z.string().default('your-super-secret-jwt-key-change-this-in-production'),
   JWT_TTL_MIN: z.coerce.number().default(30),
 

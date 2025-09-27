@@ -6,6 +6,7 @@
 
 import { Logger } from 'pino';
 import { validateInput, SubmitSpecSchema, SubmitSpecInput } from '../lib/validation.js';
+import { config } from '../config/env.js';
 import { withRetry, prisma } from '../lib/database.js';
 import { ToolResult, SubmitSpecResponse, serializeForDatabase } from '../types/mcp.js';
 import { success, failure, isFailure } from '../types/errors.js';
@@ -49,15 +50,18 @@ export async function submitSpecTool(args: unknown, logger: Logger): Promise<Too
     criteriaCount: input.acceptance_criteria.length,
   });
 
-  // Create task in database
+  // Create task in database (auto-claim if configured)
   const createResult = await withRetry(async () => {
+    const autoClaim = config.AUTO_CLAIM_ON_CREATE;
+    const defaultAssignee = config.DEFAULT_ASSIGNEE || 'augment-code';
     return await prisma.task.create({
       data: {
         title: input.title,
         description: input.description,
         repo: input.repo || null,
         acceptanceCriteria: serializeForDatabase(input.acceptance_criteria),
-        status: 'todo',
+        status: autoClaim ? 'claimed' : 'todo',
+        assignee: autoClaim ? defaultAssignee : null,
       },
     });
   });
@@ -88,21 +92,44 @@ export async function submitSpecTool(args: unknown, logger: Logger): Promise<Too
 
   const task = createResult.data;
 
-  // Log the event
+  // Log the submit_spec event and, if auto-claimed, a task_claimed event
   const eventResult = await withRetry(async () => {
-    return await prisma.event.create({
-      data: {
-        taskId: task.id,
-        actor: 'system', // TODO: Get actual user from auth context
-        action: 'submit_spec',
-        payload: serializeForDatabase({
-          title: input.title,
-          repo: input.repo,
-          criteriaCount: input.acceptance_criteria.length,
-        }),
-        success: true,
-      },
-    });
+    const events = [] as any[];
+    events.push(
+      prisma.event.create({
+        data: {
+          taskId: task.id,
+          actor: 'system',
+          action: 'submit_spec',
+          payload: serializeForDatabase({
+            title: input.title,
+            repo: input.repo,
+            criteriaCount: input.acceptance_criteria.length,
+          }),
+          success: true,
+        },
+      })
+    );
+
+    if (config.AUTO_CLAIM_ON_CREATE) {
+      events.push(
+        prisma.event.create({
+          data: {
+            taskId: task.id,
+            actor: config.DEFAULT_ASSIGNEE || 'augment-code',
+            action: 'task_claimed',
+            payload: serializeForDatabase({
+              assignee: config.DEFAULT_ASSIGNEE || 'augment-code',
+              timestamp: new Date().toISOString(),
+            }),
+            success: true,
+          },
+        })
+      );
+    }
+
+    await prisma.$transaction(events);
+    return true as const;
   });
 
   if (isFailure(eventResult)) {
@@ -117,6 +144,7 @@ export async function submitSpecTool(args: unknown, logger: Logger): Promise<Too
     title: task.title,
     status: task.status,
     created_at: task.createdAt.toISOString(),
+    assignee: task.assignee || undefined,
   };
 
   logger.info('Task created successfully', {

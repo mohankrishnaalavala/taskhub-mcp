@@ -55,6 +55,7 @@ export interface SubmitSpecResponse {
   title: string;
   status: string;
   created_at: string;
+  assignee?: string;
 }
 
 export interface ListTasksResponse {
