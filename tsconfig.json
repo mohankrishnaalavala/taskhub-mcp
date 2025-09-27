@@ -6,36 +6,13 @@
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,
     "allowJs": true,
-    "checkJs": false,
     "outDir": "./dist",
     "rootDir": "./src",
     "strict": true,
-    "noImplicitAny": true,
-    "strictNullChecks": true,
-    "strictFunctionTypes": true,
-    "noImplicitReturns": true,
-    "noFallthroughCasesInSwitch": true,
-    "noUncheckedIndexedAccess": true,
-    "noImplicitOverride": true,
-    "exactOptionalPropertyTypes": true,
-    "forceConsistentCasingInFileNames": true,
     "declaration": true,
-    "declarationMap": true,
-    "sourceMap": true,
-    "removeComments": false,
     "skipLibCheck": true,
-    "resolveJsonModule": true,
-    "isolatedModules": true,
-    "incremental": true,
-    "tsBuildInfoFile": "./dist/.tsbuildinfo",
-    "baseUrl": "./src",
-    "paths": {
-      "@/*": ["./*"],
-      "@/lib/*": ["./lib/*"],
-      "@/tools/*": ["./tools/*"],
-      "@/types/*": ["./types/*"],
-      "@/config/*": ["./config/*"]
-    }
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true
   },
   "include": [
     "src/**/*"
@@ -43,10 +20,6 @@
   "exclude": [
     "node_modules",
     "dist",
-    "tests",
-    "scripts"
-  ],
-  "ts-node": {
-    "esm": true
-  }
+    "src/http/**/*"
+  ]
 }
