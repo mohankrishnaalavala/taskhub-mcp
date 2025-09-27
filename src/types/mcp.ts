@@ -5,13 +5,9 @@
 import { z } from 'zod';
 
 // MCP Tool result types
-export interface ToolResult {
-  content: Array<{
-    type: 'text';
-    text: string;
-  }>;
-  isError?: boolean;
-}
+import { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+// MCP Tool result type compatible with MCP SDK
+export type ToolResult = CallToolResult;
 
 // Task-related types
 export type TaskStatus = 'todo' | 'claimed' | 'in_progress' | 'review' | 'done';

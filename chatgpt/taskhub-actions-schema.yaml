@@ -8,18 +8,12 @@ info:
     url: https://github.com/mohankrishnaalavala/taskhub-mcp
 
 servers:
-  - url: http://localhost:3000
+  - url: http://localhost:7357
     description: Local development server
-  - url: https://queue-memorabilia-background-earning.trycloudflare.com
-    description: Production server
+  - url: https://SERVER_URL
+    description: Cloudflare tunnel URL
 
 components:
-  securitySchemes:
-    BearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
-      description: JWT token obtained from /auth/demo-token endpoint
 
   schemas:
     Task:
@@ -108,8 +102,7 @@ components:
           description: Unique request identifier for debugging
           example: "req-123"
 
-security:
-  - BearerAuth: []
+
 
 paths:
   /healthz:
@@ -138,41 +131,7 @@ paths:
                     type: number
                     example: 123.456
 
-  /auth/demo-token:
-    post:
-      summary: Get demo authentication token
-      description: Generate a demo JWT token for development and testing
-      security: []
-      responses:
-        '200':
-          description: Demo token generated successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  token:
-                    type: string
-                    description: JWT token for authentication
-                  type:
-                    type: string
-                    example: "Bearer"
-                  expiresIn:
-                    type: string
-                    example: "30m"
-                  user:
-                    type: object
-                    properties:
-                      userId:
-                        type: string
-                      username:
-                        type: string
-                      email:
-                        type: string
-                      roles:
-                        type: array
-                        items:
-                          type: string
+
 
   /mcp/tasks:
     get:

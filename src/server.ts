@@ -16,8 +16,8 @@ import {
 
 import { logger } from './lib/logger.js';
 import { initializeDatabase } from './lib/database.js';
-import { config } from './config/env.js';
-import { 
+import { config, derivedConfig } from './config/env.js';
+import {
   submitSpecTool,
   listTasksTool,
   claimTaskTool,
@@ -26,6 +26,8 @@ import {
   openPrTool,
   postReviewTool
 } from './tools/index.js';
+
+
 
 /**
  * Create and configure the MCP server
@@ -181,25 +183,25 @@ async function createServer(): Promise<Server> {
       switch (name) {
         case 'submit_spec':
           return await submitSpecTool(args, logger);
-        
+
         case 'list_tasks':
           return await listTasksTool(args, logger);
-        
+
         case 'claim_task':
           return await claimTaskTool(args, logger);
-        
+
         case 'start_branch':
           return await startBranchTool(args, logger);
-        
+
         case 'push_patch':
           return await pushPatchTool(args, logger);
-        
+
         case 'open_pr':
           return await openPrTool(args, logger);
-        
+
         case 'post_review':
           return await postReviewTool(args, logger);
-        
+
         default:
           throw new Error(`Unknown tool: ${name}`);
       }
@@ -230,15 +232,22 @@ async function main(): Promise<void> {
     await initializeDatabase();
     logger.info('Database initialized');
 
-    // Create MCP server
-    const server = await createServer();
-    
-    // Use stdio transport for MCP (ChatGPT and Augment both use stdio)
-    const transport = new StdioServerTransport();
-    
-    await server.connect(transport);
-    logger.info('TaskHub MCP Server started with stdio transport');
-    
+    const transports = derivedConfig.transports;
+
+    // Start stdio MCP transport (Augment Code)
+    if (transports.includes('stdio')) {
+      const server = await createServer();
+      await server.connect(new StdioServerTransport());
+      logger.info('MCP stdio transport started');
+    }
+
+    // Start HTTP transport (ChatGPT via HTTP)
+    if (transports.includes('http')) {
+      const { startHttpServer } = await import('./http/server.js');
+      await startHttpServer();
+      logger.info('HTTP transport started');
+    }
+
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     logger.error('Failed to start server', { error: errorMessage });

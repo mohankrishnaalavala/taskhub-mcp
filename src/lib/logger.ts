@@ -1,5 +1,5 @@
 import pino from 'pino';
-import { config } from '@/config/env.js';
+import { config } from '../config/env.js';
 
 // Create logger instance with configuration
 const loggerOptions: any = {

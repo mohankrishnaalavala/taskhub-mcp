@@ -10,15 +10,7 @@ import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
 import { config, derivedConfig } from '../config/env.js';
 import { logger } from '../lib/logger.js';
-import {
-  extractTokenFromHeader,
-  verifyToken,
-  generateDemoToken,
-  AuthenticationError,
-  AuthorizationError,
-  UserContext,
-  validatePermissions,
-} from '../lib/auth.js';
+
 import {
   checkIdempotencyKey,
   storeIdempotencyResponse,
@@ -38,10 +30,12 @@ import { ToolResult } from '../types/mcp.js';
 // Extend Fastify request with user context
 declare module 'fastify' {
   interface FastifyRequest {
-    user?: UserContext;
+    user?: { userId: string };
     idempotencyKey?: string;
   }
 }
+const basePath = config.BASE_PATH;
+
 
 /**
  * Create and configure Fastify server
@@ -110,28 +104,13 @@ async function registerMiddleware(server: FastifyInstance): Promise<void> {
     });
   });
 
-  // Authentication middleware (conditional)
-  if (!config.CHATGPT_MODE && config.REQUIRE_AUTH) {
-    logger.info('Authentication enabled');
-    registerAuthMiddleware(server);
-  } else {
-    logger.info('Authentication disabled - running in no-auth mode');
-    // Add mock user for no-auth mode
-    server.addHook('preHandler', async (request) => {
-      // Skip for health check and auth endpoints
-      if (request.url === '/healthz' || request.url === '/auth/demo-token') {
-        return;
-      }
-      
-      request.user = {
-        userId: 'demo-user',
-        username: 'demo-user',
-        email: 'demo@taskhub.local',
-        roles: ['developer', 'admin'],
-        permissions: ['tasks:read', 'tasks:write', 'github:read', 'github:write'],
-      };
-    });
-  }
+  // No authentication: inject demo user for all routes except health check
+  server.addHook('preHandler', async (request) => {
+    if (request.url === '/healthz') {
+      return;
+    }
+    request.user = { userId: 'demo-user' };
+  });
 
   // Idempotency middleware
   server.addHook('preHandler', async (request, reply) => {
@@ -220,7 +199,7 @@ async function registerMiddleware(server: FastifyInstance): Promise<void> {
         await storeIdempotencyResponse(idempotencyRequest, responseData, statusCode);
       } catch (error) {
         logger.error('Failed to store idempotency response', {
-          error: error.message,
+          error: (error as any)?.message,
           requestId: request.id,
         });
       }
@@ -237,46 +216,11 @@ function registerErrorHandlers(server: FastifyInstance): void {
   server.setErrorHandler((error, request, reply) => {
     const requestId = request.id;
 
-    // Authentication errors
-    if (error instanceof AuthenticationError) {
-      logger.warn('Authentication error', {
-        error: error.message,
-        code: error.code,
-        requestId,
-        url: request.url,
-      });
-
-      return reply.code(error.statusCode).send({
-        error: 'Authentication failed',
-        message: error.message,
-        code: error.code,
-        requestId,
-      });
-    }
-
-    // Authorization errors
-    if (error instanceof AuthorizationError) {
-      logger.warn('Authorization error', {
-        error: error.message,
-        code: error.code,
-        requestId,
-        userId: request.user?.userId,
-        url: request.url,
-      });
-
-      return reply.code(error.statusCode).send({
-        error: 'Authorization failed',
-        message: error.message,
-        code: error.code,
-        requestId,
-      });
-    }
-
     // Validation errors
-    if (error.validation) {
+    if ((error as any).validation) {
       logger.warn('Validation error', {
         error: error.message,
-        validation: error.validation,
+        validation: (error as any).validation,
         requestId,
         url: request.url,
       });
@@ -284,13 +228,13 @@ function registerErrorHandlers(server: FastifyInstance): void {
       return reply.code(400).send({
         error: 'Validation failed',
         message: error.message,
-        details: error.validation,
+        details: (error as any).validation,
         requestId,
       });
     }
 
     // Rate limit errors
-    if (error.statusCode === 429) {
+    if ((error as any).statusCode === 429) {
       return reply.code(429).send({
         error: 'Rate limit exceeded',
         message: error.message,
@@ -301,7 +245,7 @@ function registerErrorHandlers(server: FastifyInstance): void {
     // Generic server errors
     logger.error('HTTP server error', {
       error: error.message,
-      stack: error.stack,
+      stack: (error as any).stack,
       requestId,
       url: request.url,
       method: request.method,
@@ -363,23 +307,26 @@ export async function startHttpServer(): Promise<FastifyInstance> {
 /**
  * Validate user permissions (only when auth is enabled)
  */
-function validateUserAndPermissions(user: UserContext, permission: string): void {
-  if (!config.CHATGPT_MODE && config.REQUIRE_AUTH) {
-    validatePermissions(user, [permission]);
-  }
-  // Skip validation in no-auth mode
+function validateUserAndPermissions(_user: any, _permission: string): void {
+  // No authentication in personal mode
 }
 
 /**
  * Helper function to handle MCP tool results
  */
 function handleToolResult(result: ToolResult, reply: FastifyReply) {
-  if (result.isError) {
+  if ((result as any).isError) {
     reply.code(400);
-    return result.content?.[0] ?? { error: 'Unknown error' };
+    return (result.content?.[0] as any) ?? { error: 'Unknown error' };
   }
 
-  return JSON.parse(result.content?.[0]?.text ?? '{}');
+  const maybeText = (result.content?.[0] as any)?.text;
+  const text = typeof maybeText === 'string' ? maybeText : '{}';
+  try {
+    return JSON.parse(text);
+  } catch (_e) {
+    return { ok: true };
+  }
 }
 
 /**
@@ -391,33 +338,25 @@ async function registerRoutes(server: FastifyInstance): Promise<void> {
     return { status: 'healthy', timestamp: new Date().toISOString() };
   });
 
-  // Demo token endpoint (always available)
-  server.post('/auth/demo-token', async () => {
-    const token = generateDemoToken();
-    return {
-      token,
-      type: 'Bearer',
-      expires_in: derivedConfig.jwtTtlSeconds,
-    };
-  });
+
 
   // Task endpoints
-  server.get('/mcp/tasks', async (request) => {
+  server.get('/mcp/tasks', async (request, reply) => {
     const user = request.user!;
     validateUserAndPermissions(user, 'read');
 
     const { status, limit = 10, offset = 0 } = request.query as any;
-    
+
     const result = await listTasksTool({ status, limit, offset }, logger);
-    return handleToolResult(result, request.reply);
+    return handleToolResult(result, reply);
   });
 
-  server.post('/mcp/tasks', async (request) => {
+  server.post('/mcp/tasks', async (request, reply) => {
     const user = request.user!;
     validateUserAndPermissions(user, 'write');
 
     const result = await submitSpecTool(request.body, logger);
-    return handleToolResult(result, request.reply);
+    return handleToolResult(result, reply);
   });
 
   // claim_task -> POST /mcp/tasks/:id/claim
@@ -522,22 +461,4 @@ async function registerRoutes(server: FastifyInstance): Promise<void> {
 /**
  * Register authentication middleware (only when auth is enabled)
  */
-function registerAuthMiddleware(server: FastifyInstance): void {
-  server.addHook('preHandler', async (request, reply) => {
-    // Skip auth for health check and demo token endpoints
-    if (request.url === '/healthz' || request.url === '/auth/demo-token') {
-      return;
-    }
 
-    try {
-      const token = extractTokenFromHeader(request.headers.authorization);
-      const user = await verifyToken(token);
-      request.user = user;
-    } catch (error) {
-      if (error instanceof AuthenticationError || error instanceof AuthorizationError) {
-        throw error;
-      }
-      throw new AuthenticationError('Invalid authentication token', 'INVALID_TOKEN');
-    }
-  });
-}

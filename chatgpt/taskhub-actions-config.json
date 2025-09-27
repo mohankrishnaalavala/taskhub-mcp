@@ -5,21 +5,20 @@
   "description_for_human": "Task management and GitHub workflow automation for rapid product development",
   "description_for_model": "TaskHub MCP enables complete task-to-PR workflows: create tasks, claim them, create branches, push code, open PRs, and post reviews. Supports JWT authentication and idempotency.",
   "auth": {
-    "type": "bearer",
-    "instructions": "Get a demo token by calling POST /auth/demo-token first, then use the returned token for all subsequent requests."
+    "type": "none"
   },
   "api": {
     "type": "openapi",
-    "url": "http://localhost:3000",
-    "has_user_authentication": true
+    "url": "https://SERVER_URL",
+    "has_user_authentication": false
   },
   "logo_url": "https://example.com/taskhub-logo.png",
   "contact_email": "support@taskhub.local",
   "legal_info_url": "https://example.com/legal",
   "privacy_policy_url": "https://example.com/privacy",
   "instructions": {
-    "general": "TaskHub MCP automates the complete software development workflow from task creation to pull request management. Always authenticate first by getting a demo token.",
-    "authentication": "1. Call POST /auth/demo-token to get a JWT token\n2. Use the token in Authorization header: 'Bearer <token>'\n3. Tokens expire in 30 minutes",
+    "general": "TaskHub MCP automates the complete software development workflow from task creation to pull request management. Personal setup uses no authentication for simplicity.",
+    "authentication": "No authentication is required in this personal setup.",
     "workflow": "Typical workflow:\n1. Create task with POST /mcp/tasks\n2. Claim task with POST /mcp/tasks/{id}/claim\n3. Create branch with POST /mcp/tasks/{id}/branch\n4. Push code with POST /mcp/tasks/{id}/patch\n5. Open PR with POST /mcp/tasks/{id}/pr\n6. Review with POST /mcp/tasks/{id}/review",
     "best_practices": [
       "Always include meaningful acceptance criteria when creating tasks",
